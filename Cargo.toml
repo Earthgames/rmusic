@@ -1,0 +1,30 @@
+[package]
+name = "rmusic"
+version = "0.1.0"
+edition = "2021"
+authors = ["Earthgame_s <earthgame_s@outlook.com>"]
+license = "GPL-3.0-or-later"
+
+[dependencies]
+#directories = "5.0" # to get the user directories
+#glob = "0.3" # to read directories
+#lofty = "0.18" # read tags and manipulate all music tags
+clap = { version = "4.0", features = [
+    "derive",
+    "cargo",
+    "env",
+] } # command line interface
+#clap_complete = "4.4"
+#colored = "2.0" # color output and bold and other cool output for terminal
+#serde = { version = "1.0", features = [
+#    "derive",
+#] } # serializing and deserializing
+#toml = "0.8" # toml format
+simplelog = "0.12" # logging
+log = "0.4" # logging
+#audiopus = "0.2.0" # opus
+magnum-opus = "0.3.2" # opus but magnum
+cpal = "0.15.3" # music output
+ogg = "0.9.1" # ogg reading
+#opus-mux = "0.1.1" # ogg reading, opus stream only, per page reading == to slow
+byteorder = "1.5.0" # Read bytes
