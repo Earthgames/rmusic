@@ -6,18 +6,19 @@ use std::fs::File;
 use std::io::{BufReader, Seek, SeekFrom};
 
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt};
+use cpal::Sample;
 use magnum_opus::{Channels, Decoder};
 use ogg::PacketReader;
-use cpal::Sample;
 
 const OGGMAXPAGESIZE: u16 = 65307;
 
+#[derive(Debug)]
 /// The header of the Opus Stream
 pub struct OpusHeader {
     version: u8,
     pub channels: u8,
     pre_skip: u16,
-    ///DO NOT use this while decoding, this is not what you think it is.
+    ///DO NOT use this while decoding; this is not what you think it is.
     ///Unless you know FOR sure what this is, which you probably don't.
     input_sample_rate: u32,
     output_gain: i16,
@@ -231,6 +232,7 @@ impl OpusReader {
         })
     }
 
+
     fn add_buffer(&mut self) -> crate::Result<()> {
         let packet = &self.packet_reader.read_packet_expected()?;
         self.pos += 1;
@@ -255,7 +257,7 @@ impl OpusReader {
             self.add_buffer()?;
         }
         for i in data.iter_mut() {
-            *i = match self.buffer.pop_front(){
+            *i = match self.buffer.pop_front() {
                 Some(sample) => sample,
                 None => Sample::EQUILIBRIUM,
             };
