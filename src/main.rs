@@ -5,14 +5,14 @@ use std::sync::mpsc;
 use std::sync::mpsc::Receiver;
 
 use clap::Parser;
-use cpal::{Sample, SampleRate, SupportedStreamConfig};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::{Sample, SampleRate, SupportedStreamConfig};
 use log::{error, LevelFilter};
 use simplelog::TermLogger;
 
 use cli::Cli;
-use rmusic::decoders::Decoder;
 use rmusic::decoders::ogg_opus::OpusReader;
+use rmusic::decoders::Decoder;
 use rmusic::playback::{PlaybackAction, PlaybackDaemon};
 
 mod cli;
@@ -49,17 +49,17 @@ fn main() {
         simplelog::TerminalMode::Stdout,
         simplelog::ColorChoice::Auto,
     )
-        .unwrap();
+    .unwrap();
 
     // Music file
     let music_file = exit_on_error!(File::open(&cli.opus_file));
-
 
     // Opus reader
     let opus_reader = exit_on_error!(OpusReader::new(BufReader::new(music_file)));
 
     // playback Daemon
-    let mut playback_daemon = PlaybackDaemon::new(PathBuf::from(cli.opus_file), Decoder::Opus(opus_reader));
+    let mut playback_daemon =
+        PlaybackDaemon::new(PathBuf::from(cli.opus_file), Decoder::Opus(opus_reader));
 
     // Audio output
     let host = cpal::default_host();
@@ -87,24 +87,24 @@ fn main() {
         config.sample_format(),
     );
 
-
-    // Thread communication 
+    // Thread communication
     let (tx, rx) = mpsc::channel();
 
     // Stream setup
     let err_fn = |err| error!("an error occurred on the output audio stream: {}", err);
-    let decoder = move |data: &mut [f32], callback: &_| decode(data, callback, &mut playback_daemon, &rx);
+    let decoder =
+        move |data: &mut [f32], callback: &_| decode(data, callback, &mut playback_daemon, &rx);
     let stream =
         exit_on_error!(device.build_output_stream(&supported_config.into(), decoder, err_fn, None));
     exit_on_error!(stream.play());
 
     let mut command = String::new();
     let stdin = stdin();
-    'main: loop {
+    loop {
         command.clear();
         exit_on_error!(stdin.read_line(&mut command)); // Ignore all errors for now
         match command.as_str().trim() {
-            "q" => break 'main,
+            "q" => break,
             "p" => exit_on_error!(tx.send(PlaybackAction::Playing)),
             "s" => exit_on_error!(tx.send(PlaybackAction::Paused)),
             "f" => exit_on_error!(tx.send(PlaybackAction::FastForward(240000))),
@@ -113,24 +113,34 @@ fn main() {
     }
 }
 
-fn decode(data: &mut [f32], _callback: &cpal::OutputCallbackInfo, playback_daemon: &mut PlaybackDaemon, rx: &Receiver<PlaybackAction>) {
+fn decode(
+    data: &mut [f32],
+    _callback: &cpal::OutputCallbackInfo,
+    playback_daemon: &mut PlaybackDaemon,
+    rx: &Receiver<PlaybackAction>,
+) {
     if let Ok(status) = rx.try_recv() {
         match status {
             PlaybackAction::Playing => playback_daemon.playing = true,
             PlaybackAction::Paused => playback_daemon.playing = false,
             PlaybackAction::FastForward(amount) => {
                 let mut discard = vec![0.0f32; amount as usize];
-                playback_daemon.fill(&mut discard).unwrap_or_else(|err| error!("Error in Stream: {}", err));
+                playback_daemon
+                    .fill(&mut discard)
+                    .unwrap_or_else(|err| error!("Error in Stream: {}", err));
             }
+            PlaybackAction::Rewinding(amount) => todo!(),
             _ => unimplemented!(),
         }
     }
-    
+
     if playback_daemon.playing {
-        playback_daemon.fill(data).unwrap_or_else(|err| error!("Error in Stream: {}", err))
+        playback_daemon
+            .fill(data)
+            .unwrap_or_else(|err| error!("Error in Stream: {}", err))
     } else {
         for i in data.iter_mut() {
             *i = Sample::EQUILIBRIUM;
-        };
+        }
     }
 }

@@ -2,8 +2,8 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
-use crate::decoders::Decoder;
 use crate::decoders::ogg_opus::OpusReader;
+use crate::decoders::Decoder;
 
 #[derive(Debug)]
 pub enum PlaybackAction {
@@ -28,7 +28,7 @@ impl PlaybackDaemon {
         let current = PathBuf::from(file);
         let decoder = match_decoder(&current)?;
         Some(Box::new(PlaybackDaemon {
-            playing: false,
+            playing: true,
             current,
             queue: vec![],
             decoder,
@@ -37,7 +37,7 @@ impl PlaybackDaemon {
 
     pub fn new(file: PathBuf, decoder: Decoder) -> PlaybackDaemon {
         PlaybackDaemon {
-            playing: false,
+            playing: true,
             current: file,
             queue: vec![],
             decoder,
@@ -45,13 +45,15 @@ impl PlaybackDaemon {
     }
 
     pub fn fill(&mut self, data: &mut [f32]) -> crate::Result<()> {
-       self.decoder.fill(data)
+        self.decoder.fill(data)
     }
 }
 
 pub fn match_decoder(file: &Path) -> Option<Decoder> {
     match file.extension()?.to_str()? {
-        "opus" => Some(Decoder::Opus(OpusReader::new(BufReader::new(File::create_new(file).ok()?)).ok()?)),
+        "opus" => Some(Decoder::Opus(
+            OpusReader::new(BufReader::new(File::create_new(file).ok()?)).ok()?,
+        )),
         _ => None,
     }
 }

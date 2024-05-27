@@ -3,7 +3,7 @@ use crate::decoders::ogg_opus::OpusReader;
 pub mod ogg_opus;
 
 pub enum Decoder {
-    Opus(OpusReader)
+    Opus(OpusReader),
 }
 
 impl Decoder {

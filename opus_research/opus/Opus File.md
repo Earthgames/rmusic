@@ -31,10 +31,10 @@ When the segment's length is 255, this indicates that the following segment is p
 When the segment's length is 0–254, this indicates that this segment is the final segment in this packet.
 When the full packet's length is a multiple of 255, the final segment is length 0.
 
-### Package
+### Packet
 
-After the Segment table the packages start.
-Packages should be the smallest form for a media stream, one frame, one tick etc.
+After the Segment table the packets start.
+Packets should be the smallest form for a media stream, one frame, one tick etc.
  
 ## Identification Header
 
