@@ -1,5 +1,6 @@
 use crate::decoders::ogg_opus::OpusReader;
 
+mod ogg;
 pub mod ogg_opus;
 
 pub enum Decoder {

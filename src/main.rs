@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{BufReader, stdin};
+use std::io::{stdin, BufReader};
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::sync::mpsc::Receiver;
@@ -129,7 +129,7 @@ fn decode(
                     .fill(&mut discard)
                     .unwrap_or_else(|err| error!("Error in Stream: {}", err));
             }
-            PlaybackAction::Rewinding(amount) => todo!(),
+            PlaybackAction::Rewinding(amount) => unimplemented!(),
             _ => unimplemented!(),
         }
     }

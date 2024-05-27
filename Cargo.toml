@@ -25,5 +25,4 @@ log = "0.4" # logging
 #audiopus = "0.2.0" # opus
 magnum-opus = "0.3.2" # opus but magnum
 cpal = "0.15.3" # music output
-ogg = "0.9.1" # ogg reading
 byteorder = "1.5.0" # Read bytes
