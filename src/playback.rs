@@ -47,7 +47,7 @@ impl PlaybackDaemon {
         }
     }
 
-    pub fn fill(&mut self, data: &mut [f32]) -> crate::Result<()> {
+    pub fn fill(&mut self, data: &mut [f32]) -> crate::Result<u64> {
         self.decoder.fill(data)
     }
 

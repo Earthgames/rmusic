@@ -171,23 +171,13 @@ impl OggReader {
         Ok(Packet::new(result))
     }
 
-    // Tries to find the last granular positions from a stream, will assume there is one big stream in the file
-    pub fn find_last_granular(&mut self) -> std::io::Result<u64> {
+    /// Find the last granular positions from the current stream
+    ///
+    /// May loop endlessly if the file is infinitely long
+    pub fn last_granular_position(&mut self) -> std::io::Result<u64> {
         let safe_pos = self.file_reader.stream_position()?;
         let current_segments = self.page_segments.clone();
         let current_granular = self.granule_position;
-        let end_of_file = self.file_reader.seek(SeekFrom::End(0))?;
-        // See end_of_file as the file size
-        // If the file size is smaller than the possible maximum page length we start at the beginning
-        // otherwise we will start at the end - max_page_size
-        if end_of_file < (OGGMAXPAGESIZE as u64) + safe_pos {
-            // for now just use the safe position.
-            self.file_reader.seek(SeekFrom::Start(safe_pos))?;
-            // We now know that the next pages are very probably the opus stream, so we can iterate over those.
-        } else {
-            self.file_reader
-                .seek(SeekFrom::End(-(OGGMAXPAGESIZE as i64)))?;
-        }
         let length = loop {
             // loop until we find the length, 🙏 let's hope it does not loop endlessly.
             if self.read_page_header().is_ok() {
@@ -224,11 +214,12 @@ impl OggReader {
     /// Finds the page that has contains the target granular.
     /// Where the granular position gives the last thing of the page
     /// ```text
-    /// [------gran][---target---gran]
-    ///         ^
-    ///     return value
+    /// [---------gran][---target---gran]
+    ///           ^     ^
+    /// (return value)(continue reading from here)
     /// ```
-    /// Return the granular position of the start of that page
+    /// Return the granular position of the previous page
+    /// The Ogg reader will continue reading form the found page
     pub fn find_granular_position_last(&mut self, target: u64) -> std::io::Result<u64> {
         self.file_reader.seek(SeekFrom::Start(0))?;
         let mut last_granular = 0;
@@ -275,7 +266,8 @@ impl OggReader {
     ///    ^     
     /// return value
     /// ```
-    /// Return the granular position of the start of that page
+    /// Return the granular position of the current page
+    /// The Ogg reader will continue form the found page
     pub fn find_granular_position_first(&mut self, target: u64) -> std::io::Result<u64> {
         self.file_reader.seek(SeekFrom::Start(0))?;
         let mut last_granular = 0;

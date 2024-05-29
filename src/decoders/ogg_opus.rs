@@ -94,9 +94,11 @@ pub struct OpusReader {
     pub opus_header: OpusHeader,
     buffer: VecDeque<f32>,
     package_size: u16,
+    pos: u32,
     /// Length in samples
     pub length: u64,
     pub finished: bool,
+    left: u64,
 }
 
 impl OpusReader {
@@ -118,8 +120,7 @@ impl OpusReader {
         }
 
         // Get length
-        let length = ogg_reader.find_last_granular()?;
-        // let length = 8000000;
+        let length = ogg_reader.last_granular_position()? - opus_header.pre_skip as u64;
 
         // Get channels
         let channels = match opus_header.channels {
@@ -132,6 +133,8 @@ impl OpusReader {
         let mut decoder = Decoder::new(48000, channels)?;
         decoder.set_gain(opus_header.output_gain as i32)?;
 
+        let mut pos = 0;
+
         // Create buffer and fill with first decoder output
         let mut buffer = Vec::new();
         let packet = ogg_reader.read_packet()?.data;
@@ -139,6 +142,7 @@ impl OpusReader {
         let mut samples = vec![0f32; (package_size * opus_header.channels as u16) as usize];
         decoder.decode_float(&packet, &mut samples, false)?;
         buffer.append(&mut samples);
+        pos += 1;
         // remove the pre-skip from the buffer
         while buffer.len() < opus_header.pre_skip as usize {
             let packet = &ogg_reader.read_packet()?.data;
@@ -156,30 +160,38 @@ impl OpusReader {
             buffer: buffer.into(),
             package_size,
             length,
+            pos,
             finished: false,
+            left: length,
         })
     }
 
-    fn add_buffer(&mut self) -> crate::Result<()> {
+    fn add_buffer(&mut self) -> crate::Result<u64> {
         let packet = &self.ogg_reader.read_packet()?;
+        self.pos += 1;
 
         let mut samples =
             vec![0f32; (self.package_size * self.opus_header.channels as u16) as usize];
         self.decoder
             .decode_float(&packet.data, &mut samples, false)?;
-        // check length
+
         if packet.last
         // Are we in the last page?
         {
-            let left = (self.length % self.package_size as u64) as usize;
-            samples.drain(self.package_size as usize - left..self.package_size as usize);
+            // last package length
+            let last = self.length % self.package_size as u64;
+            // Remove samples that are not part of the song
+            samples.drain(self.package_size as usize - last as usize..self.package_size as usize);
             self.finished = true;
-        }
+            self.left = last;
+        } else {
+            self.left -= self.package_size as u64;
+        };
         self.buffer.append(&mut samples.into());
-        Ok(())
+        Ok(self.left)
     }
 
-    /// Got to the target sample
+    /// Go to the target sample
     pub fn goto(&mut self, target: u64) -> crate::Result<()> {
         let gran = self.ogg_reader.find_granular_position_last(target)?;
         let off = target - gran;
@@ -200,15 +212,16 @@ impl OpusReader {
 
     /// Fill external data with the internal buffer
     ///
-    /// Will fill up the internal buffer first so it has enough samples
+    /// Will fill up the internal buffer first, so it has enough samples
     /// to fill the data
-    pub fn fill(&mut self, data: &mut [f32]) -> crate::Result<()> {
+    pub fn fill(&mut self, data: &mut [f32]) -> crate::Result<u64> {
+        let mut left = 0;
         while data.len() > self.buffer.len() && !self.finished {
-            self.add_buffer()?;
+            left = self.add_buffer()?;
         }
         for i in data.iter_mut() {
-            *i = self.buffer.pop_front().unwrap_or(Sample::EQUILIBRIUM);
+            *i = self.buffer.pop_front().unwrap_or(Sample::EQUILIBRIUM)
         }
-        Ok(())
+        Ok(left)
     }
 }

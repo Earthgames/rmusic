@@ -61,8 +61,6 @@ fn main() {
     let mut playback_daemon =
         PlaybackDaemon::new(PathBuf::from(cli.opus_file), Decoder::Opus(opus_reader));
 
-    println!("{}", playback_daemon.current_length());
-
     // Audio output
     let host = cpal::default_host();
     let device = host
@@ -126,10 +124,6 @@ fn decode(
             PlaybackAction::Playing => playback_daemon.playing = true,
             PlaybackAction::Paused => playback_daemon.playing = false,
             PlaybackAction::FastForward(amount) => {
-                let mut discard = vec![0.0f32; amount as usize];
-                playback_daemon
-                    .fill(&mut discard)
-                    .unwrap_or_else(|err| error!("Error in Stream: {}", err));
             }
             PlaybackAction::Rewinding(amount) => unimplemented!(),
             _ => unimplemented!(),
@@ -139,9 +133,7 @@ fn decode(
     if playback_daemon.playing {
         playback_daemon
             .fill(data)
-            .unwrap_or_else(|err| error!("Error in Stream: {}", err));
-        playback_daemon.played += data.len() as u128;
-        println!("{}", playback_daemon.played);
+            .unwrap_or_else(|err| {error!("Error in Stream: {}", err); 0});
     } else {
         for i in data.iter_mut() {
             *i = Sample::EQUILIBRIUM;

@@ -8,7 +8,8 @@ pub enum Decoder {
 }
 
 impl Decoder {
-    pub fn fill(&mut self, data: &mut [f32]) -> crate::Result<()> {
+    /// Returns the number of samples left in the song
+    pub fn fill(&mut self, data: &mut [f32]) -> crate::Result<u64> {
         match self {
             Decoder::Opus(opus) => opus.fill(data),
         }
