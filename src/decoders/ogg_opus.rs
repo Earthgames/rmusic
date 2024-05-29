@@ -17,8 +17,9 @@ pub struct OpusHeader {
     version: u8,
     pub channels: u8,
     pre_skip: u16,
-    ///DO NOT use this while decoding; this is not what you think it is.
-    ///Unless you know FOR sure what this is, which you probably don't.
+    /// DO NOT use this while decoding; this is not what you think it is.
+    ///
+    /// Unless you know FOR sure what this is, which you probably don't.
     input_sample_rate: u32,
     output_gain: i16,
     channel_mapping_family: u8,
@@ -88,12 +89,11 @@ impl OpusHeader {
 }
 
 pub struct OpusReader {
-    packet_reader: OggReader,
+    ogg_reader: OggReader,
     decoder: Decoder,
     pub opus_header: OpusHeader,
     buffer: VecDeque<f32>,
     package_size: u16,
-    pos: u32,
     /// Length in samples
     pub length: u64,
     pub finished: bool,
@@ -101,14 +101,14 @@ pub struct OpusReader {
 
 impl OpusReader {
     pub fn new(file: BufReader<File>) -> crate::Result<OpusReader> {
-        // ogg initialization
-        let mut packet_reader = OggReader::try_new(file)?;
+        // Ogg initialization
+        let mut ogg_reader = OggReader::try_new(file)?;
 
-        // get the first package and turn it into a header
-        let opus_header = OpusHeader::new(&packet_reader.read_packet()?.data)?;
+        // Get the first package and turn it into a header
+        let opus_header = OpusHeader::new(&ogg_reader.read_packet()?.data)?;
 
         // Check if there is a comment stream and skip it
-        let comment_packet = packet_reader.read_packet()?.data;
+        let comment_packet = ogg_reader.read_packet()?.data;
         if !comment_packet.starts_with(b"OpusTags") {
             // Magic Signature
             return Err(Box::new(OpusPhraseError {
@@ -118,7 +118,7 @@ impl OpusReader {
         }
 
         // Get length
-        let length = packet_reader.find_last_granular()?;
+        let length = ogg_reader.find_last_granular()?;
         // let length = 8000000;
 
         // Get channels
@@ -128,24 +128,20 @@ impl OpusReader {
             _ => panic!("unsupported channel count"),
         };
 
-        // setup decoder
+        // Setup decoder
         let mut decoder = Decoder::new(48000, channels)?;
         decoder.set_gain(opus_header.output_gain as i32)?;
 
-        let mut pos = 0;
-
-        // create buffer and fill with first decoder output
+        // Create buffer and fill with first decoder output
         let mut buffer = Vec::new();
-        let packet = packet_reader.read_packet()?.data;
+        let packet = ogg_reader.read_packet()?.data;
         let package_size = decoder.get_nb_samples(&packet)? as u16;
         let mut samples = vec![0f32; (package_size * opus_header.channels as u16) as usize];
         decoder.decode_float(&packet, &mut samples, false)?;
         buffer.append(&mut samples);
-        pos += 1;
         // remove the pre-skip from the buffer
         while buffer.len() < opus_header.pre_skip as usize {
-            let packet = &packet_reader.read_packet()?.data;
-            pos += 1;
+            let packet = &ogg_reader.read_packet()?.data;
             let mut samples = vec![0f32; (package_size * opus_header.channels as u16) as usize];
             decoder.decode_float(packet, &mut samples, false)?;
             buffer.append(&mut samples);
@@ -154,21 +150,18 @@ impl OpusReader {
 
         // return the Opus reader
         Ok(OpusReader {
-            packet_reader,
+            ogg_reader,
             decoder,
             opus_header,
             buffer: buffer.into(),
             package_size,
             length,
-            pos,
             finished: false,
         })
     }
 
     fn add_buffer(&mut self) -> crate::Result<()> {
-        let packet = &self.packet_reader.read_packet()?;
-        self.pos += 1;
-        // println!("{:?}", packet.data);
+        let packet = &self.ogg_reader.read_packet()?;
 
         let mut samples =
             vec![0f32; (self.package_size * self.opus_header.channels as u16) as usize];
@@ -186,6 +179,29 @@ impl OpusReader {
         Ok(())
     }
 
+    /// Got to the target sample
+    pub fn goto(&mut self, target: u64) -> crate::Result<()> {
+        let gran = self.ogg_reader.find_granular_position_last(target)?;
+        let off = target - gran;
+        // Skip packets
+        let to_skip_packets = off / self.package_size as u64;
+        for _ in 0..to_skip_packets {
+            self.ogg_reader.read_packet()?;
+        }
+        // Refill buffer and skip samples
+        let to_skip_samples = (off % self.package_size as u64) as usize;
+        self.buffer.clear();
+        while self.buffer.len() < to_skip_samples {
+            self.add_buffer()?;
+        }
+        self.buffer.drain(0..to_skip_samples);
+        Ok(())
+    }
+
+    /// Fill external data with the internal buffer
+    ///
+    /// Will fill up the internal buffer first so it has enough samples
+    /// to fill the data
     pub fn fill(&mut self, data: &mut [f32]) -> crate::Result<()> {
         while data.len() > self.buffer.len() && !self.finished {
             self.add_buffer()?;

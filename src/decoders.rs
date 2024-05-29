@@ -13,4 +13,10 @@ impl Decoder {
             Decoder::Opus(opus) => opus.fill(data),
         }
     }
+
+    pub fn length(&self) -> u64 {
+        match self {
+            Decoder::Opus(opus) => opus.length,
+        }
+    }
 }

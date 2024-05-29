@@ -172,7 +172,6 @@ impl OggReader {
     }
 
     // Tries to find the last granular positions from a stream, will assume there is one big stream in the file
-    // BROKEN NEEDS TO BE FIXED
     pub fn find_last_granular(&mut self) -> std::io::Result<u64> {
         let safe_pos = self.file_reader.stream_position()?;
         let current_segments = self.page_segments.clone();
@@ -206,7 +205,6 @@ impl OggReader {
                         }))?;
                     }
                     OggHeaderType::Start => {
-                        // A new stream? we will just give the current granular position
                         // We have skipped passed an End Page and now find a new Stream ???
                         // Just throw an Error
                         return Err(std::io::Error::new(
@@ -221,6 +219,105 @@ impl OggReader {
         self.granule_position = current_granular;
         self.page_segments = current_segments;
         length
+    }
+
+    /// Finds the page that has contains the target granular.
+    /// Where the granular position gives the last thing of the page
+    /// ```text
+    /// [------gran][---target---gran]
+    ///         ^
+    ///     return value
+    /// ```
+    /// Return the granular position of the start of that page
+    pub fn find_granular_position_last(&mut self, target: u64) -> std::io::Result<u64> {
+        self.file_reader.seek(SeekFrom::Start(0))?;
+        let mut last_granular = 0;
+        loop {
+            if self.read_page_header().is_ok() {
+                match self.header_type {
+                    // We did not find the right page
+                    OggHeaderType::End => break Ok(self.granule_position),
+
+                    OggHeaderType::Continuation | OggHeaderType::None => {
+                        // Is our target in the last page
+                        if last_granular >= target && target <= self.granule_position {
+                            return Ok(last_granular);
+                        }
+                        if target < self.granule_position {
+                            // We flew past it ???
+                            return Ok(self.granule_position);
+                        }
+                        // else we search further
+                        self.file_reader.seek(SeekFrom::Current({
+                            let mut total = 0;
+                            for i in self.page_segments.iter() {
+                                total += *i as i64;
+                            }
+                            total
+                        }))?;
+                        last_granular = self.granule_position;
+                    }
+                    OggHeaderType::Start => {
+                        return Err(std::io::Error::new(
+                            ErrorKind::InvalidData,
+                            "Found no End of Stream",
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    /// Finds the page that has contains the target granular.
+    /// Where the granular position gives the first thing of the page.
+    /// ```text
+    /// [gran---target---]
+    ///    ^     
+    /// return value
+    /// ```
+    /// Return the granular position of the start of that page
+    pub fn find_granular_position_first(&mut self, target: u64) -> std::io::Result<u64> {
+        self.file_reader.seek(SeekFrom::Start(0))?;
+        let mut last_granular = 0;
+        let mut last_pos;
+        loop {
+            last_pos = self.file_reader.stream_position()?;
+            if self.read_page_header().is_ok() {
+                match self.header_type {
+                    // We did not find the right page
+                    OggHeaderType::End => break Ok(self.granule_position),
+
+                    OggHeaderType::Continuation | OggHeaderType::None => {
+                        // Is our target in the last page
+                        if last_granular >= target && target <= self.granule_position {
+                            // Reset to the last page where the target is
+                            self.file_reader.seek(SeekFrom::Start(last_pos))?;
+                            self.read_page_header()?;
+                            return Ok(last_granular);
+                        }
+                        if target < self.granule_position {
+                            // We flew past it ???
+                            return Ok(self.granule_position);
+                        }
+                        // else we search further
+                        self.file_reader.seek(SeekFrom::Current({
+                            let mut total = 0;
+                            for i in self.page_segments.iter() {
+                                total += *i as i64;
+                            }
+                            total
+                        }))?;
+                        last_granular = self.granule_position;
+                    }
+                    OggHeaderType::Start => {
+                        return Err(std::io::Error::new(
+                            ErrorKind::InvalidData,
+                            "Found no End of Stream",
+                        ));
+                    }
+                }
+            }
+        }
     }
 }
 

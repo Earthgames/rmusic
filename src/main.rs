@@ -61,6 +61,8 @@ fn main() {
     let mut playback_daemon =
         PlaybackDaemon::new(PathBuf::from(cli.opus_file), Decoder::Opus(opus_reader));
 
+    println!("{}", playback_daemon.current_length());
+
     // Audio output
     let host = cpal::default_host();
     let device = host
@@ -137,7 +139,9 @@ fn decode(
     if playback_daemon.playing {
         playback_daemon
             .fill(data)
-            .unwrap_or_else(|err| error!("Error in Stream: {}", err))
+            .unwrap_or_else(|err| error!("Error in Stream: {}", err));
+        playback_daemon.played += data.len() as u128;
+        println!("{}", playback_daemon.played);
     } else {
         for i in data.iter_mut() {
             *i = Sample::EQUILIBRIUM;

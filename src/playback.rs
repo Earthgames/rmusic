@@ -21,6 +21,7 @@ pub struct PlaybackDaemon {
     current: PathBuf,
     queue: Vec<PathBuf>,
     decoder: Decoder,
+    pub played: u128,
 }
 
 impl PlaybackDaemon {
@@ -32,6 +33,7 @@ impl PlaybackDaemon {
             current,
             queue: vec![],
             decoder,
+            played: 0,
         }))
     }
 
@@ -41,11 +43,16 @@ impl PlaybackDaemon {
             current: file,
             queue: vec![],
             decoder,
+            played: 0,
         }
     }
 
     pub fn fill(&mut self, data: &mut [f32]) -> crate::Result<()> {
         self.decoder.fill(data)
+    }
+
+    pub fn current_length(&self) -> u64 {
+        self.decoder.length()
     }
 }
 
