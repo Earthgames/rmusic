@@ -10,45 +10,54 @@ pub enum PlaybackAction {
     Playing,
     Paused,
     /// Number of samples to go back
-    Rewinding(u32),
+    Rewind(u64),
     /// Number of samples to skip
-    FastForward(u32),
+    FastForward(u64),
+    /// Number of samples to go to in a song
+    GoTo(u64),
     Que(PathBuf),
 }
 
 pub struct PlaybackDaemon {
     pub playing: bool,
-    current: PathBuf,
-    queue: Vec<PathBuf>,
+    _current: PathBuf,
+    _queue: Vec<PathBuf>,
     decoder: Decoder,
-    pub played: u128,
+    pub left: u64,
 }
 
 impl PlaybackDaemon {
     pub fn try_new(file: &str) -> Option<Box<PlaybackDaemon>> {
         let current = PathBuf::from(file);
         let decoder = match_decoder(&current)?;
+        let left = decoder.length();
         Some(Box::new(PlaybackDaemon {
             playing: true,
-            current,
-            queue: vec![],
+            _current: current,
+            _queue: vec![],
             decoder,
-            played: 0,
+            left,
         }))
     }
 
     pub fn new(file: PathBuf, decoder: Decoder) -> PlaybackDaemon {
+        let left = decoder.length();
         PlaybackDaemon {
             playing: true,
-            current: file,
-            queue: vec![],
+            _current: file,
+            _queue: vec![],
             decoder,
-            played: 0,
+            left,
         }
     }
 
-    pub fn fill(&mut self, data: &mut [f32]) -> crate::Result<u64> {
-        self.decoder.fill(data)
+    pub fn fill(&mut self, data: &mut [f32]) -> crate::Result<()> {
+        self.left = self.decoder.fill(data)?;
+        Ok(())
+    }
+
+    pub fn goto(&mut self, target: u64) -> crate::Result<()> {
+        self.decoder.goto(target)
     }
 
     pub fn current_length(&self) -> u64 {

@@ -20,4 +20,10 @@ impl Decoder {
             Decoder::Opus(opus) => opus.length,
         }
     }
+
+    pub fn goto(&mut self, target: u64) -> crate::Result<()> {
+        match self {
+            Decoder::Opus(opus) => opus.goto(target),
+        }
+    }
 }

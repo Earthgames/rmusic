@@ -1,18 +1,18 @@
 use std::fs::File;
-use std::io::{stdin, BufReader};
+use std::io::{BufReader, stdin};
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::sync::mpsc::Receiver;
 
 use clap::Parser;
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Sample, SampleRate, SupportedStreamConfig};
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use log::{error, LevelFilter};
 use simplelog::TermLogger;
 
 use cli::Cli;
-use rmusic::decoders::ogg_opus::OpusReader;
 use rmusic::decoders::Decoder;
+use rmusic::decoders::ogg_opus::OpusReader;
 use rmusic::playback::{PlaybackAction, PlaybackDaemon};
 
 mod cli;
@@ -49,7 +49,7 @@ fn main() {
         simplelog::TerminalMode::Stdout,
         simplelog::ColorChoice::Auto,
     )
-    .unwrap();
+        .unwrap();
 
     // Music file
     let music_file = exit_on_error!(File::open(&cli.opus_file));
@@ -103,11 +103,20 @@ fn main() {
     loop {
         command.clear();
         exit_on_error!(stdin.read_line(&mut command)); // Ignore all errors for now
-        match command.as_str().trim() {
+        let args: Vec<&str> = command.split_ascii_whitespace().collect();
+        match args[0] {
             "q" => break,
             "p" => exit_on_error!(tx.send(PlaybackAction::Playing)),
             "s" => exit_on_error!(tx.send(PlaybackAction::Paused)),
             "f" => exit_on_error!(tx.send(PlaybackAction::FastForward(240000))),
+            "r" => exit_on_error!(tx.send(PlaybackAction::Rewind(240000))),
+            "g" => {
+                if args.len() < 2 {
+                    continue;
+                }
+                let num = exit_on_error!(args[1].parse::<u64>()) * 48000;
+                exit_on_error!(tx.send(PlaybackAction::GoTo(num)))
+            }
             _ => continue,
         }
     }
@@ -123,17 +132,34 @@ fn decode(
         match status {
             PlaybackAction::Playing => playback_daemon.playing = true,
             PlaybackAction::Paused => playback_daemon.playing = false,
+            PlaybackAction::GoTo(target) => playback_daemon
+                .goto(target)
+                .unwrap_or_else(|err| error!("Error in Stream: {}", err)),
             PlaybackAction::FastForward(amount) => {
+                let current = playback_daemon.current_length() - playback_daemon.left;
+                let target = current + amount;
+                if target <= playback_daemon.current_length() {
+                    playback_daemon
+                        .goto(target)
+                        .unwrap_or_else(|err| error!("Error in Stream: {}", err))
+                }
             }
-            PlaybackAction::Rewinding(amount) => unimplemented!(),
+            PlaybackAction::Rewind(amount) => {
+                let current = playback_daemon.current_length() - playback_daemon.left;
+                if amount <= current {
+                    playback_daemon
+                        .goto(current - amount)
+                        .unwrap_or_else(|err| error!("Error in Stream: {}", err))
+                }
+            }
             _ => unimplemented!(),
         }
     }
 
     if playback_daemon.playing {
-        playback_daemon
-            .fill(data)
-            .unwrap_or_else(|err| {error!("Error in Stream: {}", err); 0});
+        playback_daemon.fill(data).unwrap_or_else(|err| {
+            error!("Error in Stream: {}", err);
+        });
     } else {
         for i in data.iter_mut() {
             *i = Sample::EQUILIBRIUM;

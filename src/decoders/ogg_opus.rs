@@ -194,6 +194,7 @@ impl OpusReader {
     /// Go to the target sample
     pub fn goto(&mut self, target: u64) -> crate::Result<()> {
         let gran = self.ogg_reader.find_granular_position_last(target)?;
+        self.left = self.length - gran;
         let off = target - gran;
         // Skip packets
         let to_skip_packets = off / self.package_size as u64;

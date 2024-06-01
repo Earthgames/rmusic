@@ -1,4 +1,5 @@
 use std::fs::File;
+use std::io::SeekFrom::Start;
 use std::io::{BufReader, ErrorKind, Seek, SeekFrom};
 
 use byteorder::{LittleEndian, ReadBytesExt};
@@ -7,11 +8,10 @@ const OGGMAXPAGESIZE: u16 = 65307;
 
 pub struct OggReader {
     file_reader: BufReader<File>,
-    _bitstream: u32,
+    bitstream: u32,
     _sequence: u32,
     _checksum: u32,
     page_segments: Vec<u8>,
-    package_number: u32,
     header_type: OggHeaderType,
     granule_position: u64,
 }
@@ -28,12 +28,11 @@ impl OggReader {
     pub fn try_new(file_reader: BufReader<File>) -> Result<OggReader, std::io::Error> {
         let mut reader = OggReader {
             file_reader,
-            _bitstream: 0,
+            bitstream: 0,
             _sequence: 0,
             _checksum: 0,
             // Stored in reverse order
             page_segments: vec![],
-            package_number: 0,
             header_type: OggHeaderType::End,
             granule_position: 0,
         };
@@ -73,7 +72,7 @@ impl OggReader {
         };
         // Get page info
         self.granule_position = file_reader.read_u64::<LittleEndian>()?;
-        self._bitstream = file_reader.read_u32::<LittleEndian>()?;
+        self.bitstream = file_reader.read_u32::<LittleEndian>()?;
         self._sequence = file_reader.read_u32::<LittleEndian>()?;
         self._checksum = file_reader.read_u32::<LittleEndian>()?;
         // Read page segments
@@ -185,14 +184,7 @@ impl OggReader {
                     OggHeaderType::End => break Ok(self.granule_position),
 
                     OggHeaderType::Continuation | OggHeaderType::None => {
-                        // Add all segment lengths and skip that number of bytes
-                        self.file_reader.seek(SeekFrom::Current({
-                            let mut total = 0;
-                            for i in self.page_segments.iter() {
-                                total += *i as i64;
-                            }
-                            total
-                        }))?;
+                        self.skip_page()?;
                     }
                     OggHeaderType::Start => {
                         // We have skipped passed an End Page and now find a new Stream ???
@@ -205,7 +197,7 @@ impl OggReader {
                 }
             }
         };
-        self.file_reader.seek(SeekFrom::Start(safe_pos))?;
+        self.file_reader.seek(Start(safe_pos))?;
         self.granule_position = current_granular;
         self.page_segments = current_segments;
         length
@@ -221,31 +213,32 @@ impl OggReader {
     /// Return the granular position of the previous page
     /// The Ogg reader will continue reading form the found page
     pub fn find_granular_position_last(&mut self, target: u64) -> std::io::Result<u64> {
-        self.file_reader.seek(SeekFrom::Start(0))?;
-        let mut last_granular = 0;
+        let target_stream = self.bitstream;
+        // Go to start of target stream
+        self.file_reader.seek(Start(0))?;
+        loop {
+            if self.read_page_header().is_ok() && target_stream == self.bitstream {
+                break;
+            }
+        }
+        let mut last_granular = self.granule_position;
+        self.skip_page()?;
         loop {
             if self.read_page_header().is_ok() {
                 match self.header_type {
                     // We did not find the right page
-                    OggHeaderType::End => break Ok(self.granule_position),
-
+                    OggHeaderType::End => {
+                        return Err(std::io::Error::new(
+                            ErrorKind::NotFound,
+                            "Could not find the value",
+                        ));
+                    }
                     OggHeaderType::Continuation | OggHeaderType::None => {
                         // Is our target in the last page
-                        if last_granular >= target && target <= self.granule_position {
+                        if (last_granular..=self.granule_position).contains(&target) {
                             return Ok(last_granular);
                         }
-                        if target < self.granule_position {
-                            // We flew past it ???
-                            return Ok(self.granule_position);
-                        }
-                        // else we search further
-                        self.file_reader.seek(SeekFrom::Current({
-                            let mut total = 0;
-                            for i in self.page_segments.iter() {
-                                total += *i as i64;
-                            }
-                            total
-                        }))?;
+                        self.skip_page()?;
                         last_granular = self.granule_position;
                     }
                     OggHeaderType::Start => {
@@ -268,22 +261,36 @@ impl OggReader {
     /// ```
     /// Return the granular position of the current page
     /// The Ogg reader will continue form the found page
+    /// 
+    /// UNTESTED
     pub fn find_granular_position_first(&mut self, target: u64) -> std::io::Result<u64> {
-        self.file_reader.seek(SeekFrom::Start(0))?;
-        let mut last_granular = 0;
-        let mut last_pos;
+        let target_stream = self.bitstream;
+        // Go to start of target stream
+        self.file_reader.seek(Start(0))?;
         loop {
-            last_pos = self.file_reader.stream_position()?;
+            if self.read_page_header().is_ok() && target_stream == self.bitstream {
+                break;
+            }
+        }
+        let mut last_granular = self.granule_position;
+        let mut last_pos = self.file_reader.stream_position()?;
+        self.skip_page()?;
+        loop {
             if self.read_page_header().is_ok() {
                 match self.header_type {
                     // We did not find the right page
-                    OggHeaderType::End => break Ok(self.granule_position),
+                    OggHeaderType::End => {
+                        return Err(std::io::Error::new(
+                            ErrorKind::NotFound,
+                            "Could not find the value",
+                        ));
+                    }
 
                     OggHeaderType::Continuation | OggHeaderType::None => {
                         // Is our target in the last page
-                        if last_granular >= target && target <= self.granule_position {
+                        if (last_granular..=self.granule_position).contains(&target) {
                             // Reset to the last page where the target is
-                            self.file_reader.seek(SeekFrom::Start(last_pos))?;
+                            self.file_reader.seek(Start(last_pos))?;
                             self.read_page_header()?;
                             return Ok(last_granular);
                         }
@@ -292,14 +299,9 @@ impl OggReader {
                             return Ok(self.granule_position);
                         }
                         // else we search further
-                        self.file_reader.seek(SeekFrom::Current({
-                            let mut total = 0;
-                            for i in self.page_segments.iter() {
-                                total += *i as i64;
-                            }
-                            total
-                        }))?;
+                        self.skip_page()?;
                         last_granular = self.granule_position;
+                        last_pos = self.file_reader.stream_position()?;
                     }
                     OggHeaderType::Start => {
                         return Err(std::io::Error::new(
@@ -310,6 +312,18 @@ impl OggReader {
                 }
             }
         }
+    }
+
+    fn skip_page(&mut self) -> std::io::Result<()> {
+        // Add all segment lengths and skip that number of bytes
+        self.file_reader.seek(SeekFrom::Current({
+            let mut total = 0;
+            for i in self.page_segments.iter() {
+                total += *i as i64;
+            }
+            total
+        }))?;
+        Ok(())
     }
 }
 
