@@ -1,18 +1,18 @@
 use std::fs::File;
-use std::io::{BufReader, stdin};
+use std::io::{stdin, BufReader};
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::sync::mpsc::Receiver;
 
 use clap::Parser;
-use cpal::{Sample, SampleRate, SupportedStreamConfig};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::{Sample, SampleRate, SupportedStreamConfig};
 use log::{error, LevelFilter};
 use simplelog::TermLogger;
 
 use cli::Cli;
-use rmusic::decoders::Decoder;
 use rmusic::decoders::ogg_opus::OpusReader;
+use rmusic::decoders::Decoder;
 use rmusic::playback::{PlaybackAction, PlaybackDaemon};
 
 mod cli;
@@ -49,7 +49,7 @@ fn main() {
         simplelog::TerminalMode::Stdout,
         simplelog::ColorChoice::Auto,
     )
-        .unwrap();
+    .unwrap();
 
     // Music file
     let music_file = exit_on_error!(File::open(&cli.opus_file));

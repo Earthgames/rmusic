@@ -40,7 +40,7 @@ Packets should be the smallest form for a media stream, one frame, one tick etc.
 
 ![[opus_head_structure.svg]]
 The Magic Signature is "OpusHead"
-The Version should always be 1
+The Version should always be 1, but specification requires all versions >= 15 to be supported 
 The Channels need to be larger than 0
 The Pre-Skip marks how much samples you need to skip/discard form the decoder, at 48 kHz
 The Input Sample Rate is how at how much Hz the original input stream was before encoding, during decoding you should do NOTHING with this

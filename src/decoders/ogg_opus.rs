@@ -14,15 +14,15 @@ use crate::decoders::ogg::OggReader;
 #[derive(Debug)]
 /// The header of the Opus Stream
 pub struct OpusHeader {
-    version: u8,
+    _version: u8,
     pub channels: u8,
     pre_skip: u16,
     /// DO NOT use this while decoding; this is not what you think it is.
     ///
     /// Unless you know FOR sure what this is, which you probably don't.
-    input_sample_rate: u32,
+    _input_sample_rate: u32,
     output_gain: i16,
-    channel_mapping_family: u8,
+    _channel_mapping_family: u8,
 }
 
 #[derive(Debug)]
@@ -34,7 +34,7 @@ enum OpusPhraseErrorKind {
 #[derive(Debug)]
 pub struct OpusPhraseError {
     opus_header_error_kind: OpusPhraseErrorKind,
-    message: String,
+    message: &'static str,
 }
 
 impl Error for OpusPhraseError {}
@@ -55,15 +55,14 @@ impl OpusHeader {
             // Magic Signature
             return Err(OpusPhraseError {
                 opus_header_error_kind: OpusPhraseErrorKind::NotValid,
-                message: "No Magic Signature \"OpusHead\" found".to_string(),
+                message: "No Magic Signature \"OpusHead\" found",
             });
         }
         let version = header[8];
         if version > 15 {
-            let message = format!("Incompatible Opus version: {}", version);
             return Err(OpusPhraseError {
                 opus_header_error_kind: OpusPhraseErrorKind::NotValid,
-                message,
+                message: "Incompatible Opus version",
             });
         }
         let channels = header[9];
@@ -74,16 +73,16 @@ impl OpusHeader {
         if channel_mapping_family != 0 {
             return Err(OpusPhraseError {
                 opus_header_error_kind: OpusPhraseErrorKind::Unsupported,
-                message: "Channel mapping is not supported".to_string(),
+                message: "Channel mapping is not supported",
             });
         }
         Ok(OpusHeader {
-            version,
+            _version: version,
             channels,
             pre_skip,
-            input_sample_rate,
+            _input_sample_rate: input_sample_rate,
             output_gain,
-            channel_mapping_family,
+            _channel_mapping_family: channel_mapping_family,
         })
     }
 }
@@ -108,14 +107,13 @@ impl OpusReader {
 
         // Get the first package and turn it into a header
         let opus_header = OpusHeader::new(&ogg_reader.read_packet()?.data)?;
-
         // Check if there is a comment stream and skip it
         let comment_packet = ogg_reader.read_packet()?.data;
         if !comment_packet.starts_with(b"OpusTags") {
             // Magic Signature
             return Err(Box::new(OpusPhraseError {
                 opus_header_error_kind: OpusPhraseErrorKind::NotValid,
-                message: "No Magic Signature \"OpusTags\" found".to_string(),
+                message: "No Magic Signature \"OpusTags\" found",
             }));
         }
 
@@ -126,7 +124,12 @@ impl OpusReader {
         let channels = match opus_header.channels {
             1 => Channels::Mono,
             2 => Channels::Stereo,
-            _ => panic!("unsupported channel count"),
+            _ => {
+                return Err(Box::new(OpusPhraseError {
+                    opus_header_error_kind: OpusPhraseErrorKind::Unsupported,
+                    message: "Unsupported amount of channels",
+                }))
+            }
         };
 
         // Setup decoder
@@ -193,7 +196,11 @@ impl OpusReader {
 
     /// Go to the target sample
     pub fn goto(&mut self, target: u64) -> crate::Result<()> {
-        let gran = self.ogg_reader.find_granular_position_last(target)?;
+        let gran = if target > self.ogg_reader.granular_position() {
+            self.ogg_reader.find_granular_position_last(target, true)?
+        } else {
+            self.ogg_reader.find_granular_position_last(target, false)?
+        };
         self.left = self.length - gran;
         let off = target - gran;
         // Skip packets
