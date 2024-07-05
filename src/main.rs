@@ -1,18 +1,14 @@
-use std::fs::File;
-use std::io::{stdin, BufReader};
-use std::path::PathBuf;
+use std::io::stdin;
 use std::sync::mpsc;
 use std::sync::mpsc::Receiver;
 
 use clap::Parser;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{Sample, SampleRate, SupportedStreamConfig};
+use cpal::{Sample, SupportedStreamConfig};
 use log::{error, LevelFilter};
 use simplelog::TermLogger;
 
 use cli::Cli;
-use rmusic::decoders::ogg_opus::OpusReader;
-use rmusic::decoders::Decoder;
 use rmusic::playback::{PlaybackAction, PlaybackDaemon};
 
 mod cli;
@@ -51,41 +47,27 @@ fn main() {
     )
     .unwrap();
 
-    // Music file
-    let music_file = exit_on_error!(File::open(&cli.opus_file));
-
-    // Opus reader
-    let opus_reader = exit_on_error!(OpusReader::new(BufReader::new(music_file)));
-
-    // playback Daemon
-    let mut playback_daemon =
-        PlaybackDaemon::new(PathBuf::from(cli.opus_file), Decoder::Opus(opus_reader));
-
     // Audio output
     let host = cpal::default_host();
     let device = host
         .default_output_device()
         .expect("No output device available"); // Add log
 
-    let supported_configs_range = device
-        .supported_output_configs()
-        .expect("error while querying configs");
-    let mut buff = vec![];
-    for config in supported_configs_range {
-        buff.append(&mut format!("{:?}", config).as_bytes().to_vec());
-        buff.push(b'\n');
-    }
-
     let mut supported_configs_range = device
         .supported_output_configs()
         .expect("error while querying configs");
     let config = supported_configs_range.next().unwrap();
+    let sample_rate = config.max_sample_rate();
     let supported_config = SupportedStreamConfig::new(
         2,
-        SampleRate(48000),
+        sample_rate,
         *config.buffer_size(),
-        config.sample_format(),
+        cpal::SampleFormat::F32,
     );
+
+    // playback Daemon
+    let mut playback_daemon =
+        PlaybackDaemon::try_new(&cli.opus_file, sample_rate.0 as usize).unwrap();
 
     // Thread communication
     let (tx, rx) = mpsc::channel();
@@ -108,13 +90,13 @@ fn main() {
             "q" => break,
             "p" => exit_on_error!(tx.send(PlaybackAction::Playing)),
             "s" => exit_on_error!(tx.send(PlaybackAction::Paused)),
-            "f" => exit_on_error!(tx.send(PlaybackAction::FastForward(240000))),
-            "r" => exit_on_error!(tx.send(PlaybackAction::Rewind(240000))),
+            "f" => exit_on_error!(tx.send(PlaybackAction::FastForward(5 * sample_rate.0 as u64))),
+            "r" => exit_on_error!(tx.send(PlaybackAction::Rewind(5 * sample_rate.0 as u64))),
             "g" => {
                 if args.len() < 2 {
                     continue;
                 }
-                let num = exit_on_error!(args[1].parse::<u64>()) * 48000;
+                let num = exit_on_error!(args[1].parse::<u64>()) * sample_rate.0 as u64;
                 exit_on_error!(tx.send(PlaybackAction::GoTo(num)))
             }
             _ => continue,

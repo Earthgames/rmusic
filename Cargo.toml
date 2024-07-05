@@ -22,7 +22,9 @@ clap = { version = "4.0", features = [
 #toml = "0.8" # toml format
 simplelog = "0.12" # logging
 log = "0.4" # logging
-#audiopus = "0.2.0" # opus
-magnum-opus = "0.3.2" # opus but magnum
-cpal = "0.15.3" # music output
-byteorder = "1.5.0" # Read bytes
+magnum-opus = "0.3" # opus but magnum
+cpal = "0.15" # music output
+byteorder = "1.5" # Read bytes
+symphonia = { version =  "0.5", features = ["all-formats", "all-codecs"] } # Most formats
+rubato = "0.15.0" # resampler
+anyhow = "1.0.86"

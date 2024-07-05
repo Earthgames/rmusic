@@ -5,11 +5,12 @@ use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io::BufReader;
 
+use anyhow::Result;
 use byteorder::{ByteOrder, LittleEndian};
 use cpal::Sample;
 use magnum_opus::{Channels, Decoder};
 
-use crate::decoders::ogg::OggReader;
+use crate::decoders::ogg_demuxer::OggReader;
 
 #[derive(Debug)]
 /// The header of the Opus Stream
@@ -101,7 +102,7 @@ pub struct OpusReader {
 }
 
 impl OpusReader {
-    pub fn new(file: BufReader<File>) -> crate::Result<OpusReader> {
+    pub fn new(file: BufReader<File>) -> Result<OpusReader> {
         // Ogg initialization
         let mut ogg_reader = OggReader::try_new(file)?;
 
@@ -111,10 +112,10 @@ impl OpusReader {
         let comment_packet = ogg_reader.read_packet()?.data;
         if !comment_packet.starts_with(b"OpusTags") {
             // Magic Signature
-            return Err(Box::new(OpusPhraseError {
+            Err(OpusPhraseError {
                 opus_header_error_kind: OpusPhraseErrorKind::NotValid,
                 message: "No Magic Signature \"OpusTags\" found",
-            }));
+            })?;
         }
 
         // Get length
@@ -124,12 +125,10 @@ impl OpusReader {
         let channels = match opus_header.channels {
             1 => Channels::Mono,
             2 => Channels::Stereo,
-            _ => {
-                return Err(Box::new(OpusPhraseError {
-                    opus_header_error_kind: OpusPhraseErrorKind::Unsupported,
-                    message: "Unsupported amount of channels",
-                }))
-            }
+            _ => Err(OpusPhraseError {
+                opus_header_error_kind: OpusPhraseErrorKind::Unsupported,
+                message: "Unsupported amount of channels",
+            })?,
         };
 
         // Setup decoder
@@ -169,7 +168,7 @@ impl OpusReader {
         })
     }
 
-    fn add_buffer(&mut self) -> crate::Result<u64> {
+    fn add_buffer(&mut self) -> Result<u64> {
         let packet = &self.ogg_reader.read_packet()?;
         self.pos += 1;
 
@@ -195,7 +194,7 @@ impl OpusReader {
     }
 
     /// Go to the target sample
-    pub fn goto(&mut self, target: u64) -> crate::Result<()> {
+    pub fn goto(&mut self, target: u64) -> Result<()> {
         let gran = if target > self.ogg_reader.granular_position() {
             self.ogg_reader.find_granular_position_last(target, true)?
         } else {
@@ -222,7 +221,7 @@ impl OpusReader {
     ///
     /// Will fill up the internal buffer first, so it has enough samples
     /// to fill the data
-    pub fn fill(&mut self, data: &mut [f32]) -> crate::Result<u64> {
+    pub fn fill(&mut self, data: &mut [f32]) -> Result<u64> {
         let mut left = 0;
         while data.len() > self.buffer.len() && !self.finished {
             left = self.add_buffer()?;
