@@ -99,6 +99,7 @@ pub struct OpusReader {
     pub length: u64,
     pub finished: bool,
     left: u64,
+    samples: Vec<f32>,
 }
 
 impl OpusReader {
@@ -107,9 +108,9 @@ impl OpusReader {
         let mut ogg_reader = OggReader::try_new(file)?;
 
         // Get the first package and turn it into a header
-        let opus_header = OpusHeader::new(&ogg_reader.read_packet()?.data)?;
+        let opus_header = OpusHeader::new(&ogg_reader.read_packet()?.0)?;
         // Check if there is a comment stream and skip it
-        let comment_packet = ogg_reader.read_packet()?.data;
+        let comment_packet = ogg_reader.read_packet()?.0;
         if !comment_packet.starts_with(b"OpusTags") {
             // Magic Signature
             Err(OpusPhraseError {
@@ -139,18 +140,17 @@ impl OpusReader {
 
         // Create buffer and fill with first decoder output
         let mut buffer = Vec::new();
-        let packet = ogg_reader.read_packet()?.data;
+        let packet = ogg_reader.read_packet()?.0;
         let package_size = decoder.get_nb_samples(&packet)? as u16;
         let mut samples = vec![0f32; (package_size * opus_header.channels as u16) as usize];
         decoder.decode_float(&packet, &mut samples, false)?;
-        buffer.append(&mut samples);
+        buffer.extend(samples.iter());
         pos += 1;
         // remove the pre-skip from the buffer
         while buffer.len() < opus_header.pre_skip as usize {
-            let packet = &ogg_reader.read_packet()?.data;
-            let mut samples = vec![0f32; (package_size * opus_header.channels as u16) as usize];
+            let packet = &ogg_reader.read_packet()?.0;
             decoder.decode_float(packet, &mut samples, false)?;
-            buffer.append(&mut samples);
+            buffer.extend(samples.iter());
         }
         buffer.drain(0..opus_header.pre_skip as usize);
 
@@ -165,6 +165,7 @@ impl OpusReader {
             pos,
             finished: false,
             left: length,
+            samples,
         })
     }
 
@@ -172,24 +173,26 @@ impl OpusReader {
         let packet = &self.ogg_reader.read_packet()?;
         self.pos += 1;
 
-        let mut samples =
-            vec![0f32; (self.package_size * self.opus_header.channels as u16) as usize];
         self.decoder
-            .decode_float(&packet.data, &mut samples, false)?;
+            .decode_float(&packet.0, &mut self.samples, false)?;
 
-        if packet.last
+        if packet.1
         // Are we in the last page?
         {
             // last package length
             let last = self.length % self.package_size as u64;
-            // Remove samples that are not part of the song
-            samples.drain(self.package_size as usize - last as usize..self.package_size as usize);
             self.finished = true;
             self.left = last;
+            // Remove samples that are not part of the song
+            self.buffer.extend(
+                self.samples
+                    [self.package_size as usize - last as usize..self.package_size as usize]
+                    .iter(),
+            );
         } else {
             self.left -= self.package_size as u64;
+            self.buffer.extend(self.samples.iter());
         };
-        self.buffer.append(&mut samples.into());
         Ok(self.left)
     }
 

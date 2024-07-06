@@ -15,6 +15,7 @@ pub struct OggReader {
     header_type: OggHeaderType,
     header_position: u64,
     granule_position: u64,
+    result_buffer: Vec<u8>,
 }
 
 #[derive(Ord, PartialOrd, Eq, PartialEq)]
@@ -37,6 +38,7 @@ impl OggReader {
             header_type: OggHeaderType::End,
             header_position: 0,
             granule_position: 0,
+            result_buffer: vec![],
         };
         reader.read_page_header_expect()?;
         Ok(reader)
@@ -103,7 +105,7 @@ impl OggReader {
     }
 
     /// Read the next packet
-    pub fn read_packet(&mut self) -> Result<Packet> {
+    pub fn read_packet(&mut self) -> Result<(&Vec<u8>, bool)> {
         let segment = match self.page_segments.pop() {
             Some(s) => s,
             None => {
@@ -113,10 +115,10 @@ impl OggReader {
                 ))
             }
         };
-        let mut result = vec![];
+        self.result_buffer.clear();
         if segment == 255 {
             for _ in 0..255 {
-                result.push(self.file_reader.read_u8()?);
+                self.result_buffer.push(self.file_reader.read_u8()?);
             }
             loop {
                 let segment = match self.page_segments.pop() {
@@ -149,29 +151,31 @@ impl OggReader {
                 };
                 if segment != 255 {
                     for _ in 0..segment {
-                        result.push(self.file_reader.read_u8()?)
+                        self.result_buffer.push(self.file_reader.read_u8()?)
                     }
                     break;
                 }
                 for _ in 0..255 {
-                    result.push(self.file_reader.read_u8()?);
+                    self.result_buffer.push(self.file_reader.read_u8()?);
                 }
             }
         } else {
             for _ in 0..segment {
-                result.push(self.file_reader.read_u8()?)
+                self.result_buffer.push(self.file_reader.read_u8()?)
             }
         }
         if self.page_segments.is_empty() && self.read_page_header_try().is_err() {
             if self.header_type == OggHeaderType::End {
-                return Ok(Packet::new_last(result));
+                Ok((&self.result_buffer, true))
+            } else {
+                Err(std::io::Error::new(
+                    ErrorKind::InvalidData,
+                    "Found no segment when expecting one",
+                ))
             }
-            return Err(std::io::Error::new(
-                ErrorKind::InvalidData,
-                "Found no segment when expecting one",
-            ));
+        } else {
+            Ok((&self.result_buffer, false))
         }
-        Ok(Packet::new(result))
     }
 
     /// Find the last granular positions from the current stream
@@ -339,20 +343,5 @@ impl OggReader {
                 self.skip_page()?;
             }
         }
-    }
-}
-
-pub struct Packet {
-    pub data: Vec<u8>,
-    pub last: bool,
-}
-
-impl Packet {
-    fn new(data: Vec<u8>) -> Packet {
-        Packet { data, last: false }
-    }
-
-    fn new_last(data: Vec<u8>) -> Packet {
-        Packet { data, last: true }
     }
 }
