@@ -4,7 +4,7 @@ use std::sync::mpsc::Receiver;
 
 use clap::Parser;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{Sample, SupportedStreamConfig};
+use cpal::{Sample, SampleRate, SupportedStreamConfig};
 use log::{error, LevelFilter};
 use simplelog::TermLogger;
 
@@ -60,7 +60,11 @@ fn main() {
         .supported_output_configs()
         .expect("error while querying configs");
     let config = supported_configs_range.next().unwrap();
-    let sample_rate = config.max_sample_rate();
+    let sample_rate = if config.try_with_sample_rate(SampleRate(48000)).is_some() {
+        SampleRate(48000)
+    } else {
+        config.max_sample_rate()
+    };
     let supported_config = SupportedStreamConfig::new(
         2,
         sample_rate,
