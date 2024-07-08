@@ -41,7 +41,10 @@ fn main() {
             4 => LevelFilter::Debug,
             _ => LevelFilter::Trace,
         },
-        log_config.set_time_level(LevelFilter::Off).build(),
+        log_config
+            .set_time_level(LevelFilter::Off)
+            .add_filter_ignore_str("symphonia")
+            .build(),
         simplelog::TerminalMode::Stdout,
         simplelog::ColorChoice::Auto,
     )

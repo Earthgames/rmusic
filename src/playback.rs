@@ -8,7 +8,8 @@ use cpal::Sample;
 use log::error;
 use rubato::{FftFixedInOut, Resampler};
 
-use crate::decoders::{opus_decoder::OpusReader, Decoder};
+use crate::audio_conversion::{interleaved_to_planar, planar_to_interleaved};
+use crate::decoders::{opus_decoder::OpusReader, symphonia_wrap::SymphoniaWrapper, Decoder};
 
 #[derive(Debug)]
 pub enum PlaybackAction {
@@ -55,7 +56,7 @@ impl PlaybackDaemon {
         let buffer_input_resampler = resampler.input_buffer_allocate(true);
         let buffer_output_resampler = resampler.output_buffer_allocate(true);
         let buffer_decoder_output: Vec<f32> =
-            vec![Sample::EQUILIBRIUM; (sample_rate_input / 500) * decoder.channels()];
+            vec![Sample::EQUILIBRIUM; resampler.input_frames_max() * decoder.channels()];
         let buffer_resampler_interleaved: Vec<f32> =
             vec![Sample::EQUILIBRIUM; resampler.output_frames_max() * decoder.channels()];
 
@@ -80,20 +81,17 @@ impl PlaybackDaemon {
             self.add_buffer()?;
         }
         for i in data.iter_mut() {
-            *i = match self.buffer_output.pop_front() {
-                Some(s) => s,
-                None => {
-                    error!("AHAH, No BuFFerS");
-                    Sample::EQUILIBRIUM
-                }
-            }
+            *i = self.buffer_output.pop_front().unwrap_or_else(|| {
+                error!("AHAH, No BuFFerS");
+                Sample::EQUILIBRIUM
+            })
         }
         Ok(())
     }
 
     fn add_buffer(&mut self) -> Result<()> {
         self.left = self.decoder.fill(&mut self.buffer_decoder_output)?;
-        Self::interleaved_to_planar(
+        interleaved_to_planar(
             &self.buffer_decoder_output,
             &mut self.buffer_input_resampler,
             self.decoder.channels(),
@@ -103,7 +101,7 @@ impl PlaybackDaemon {
             &mut self.buffer_output_resampler,
             None,
         )?;
-        Self::planar_to_interleaved(
+        planar_to_interleaved(
             &self.buffer_output_resampler,
             &mut self.buffer_resampler_interleaved,
             self.decoder.channels(),
@@ -120,22 +118,6 @@ impl PlaybackDaemon {
     pub fn current_length(&self) -> u64 {
         self.decoder.length()
     }
-
-    fn planar_to_interleaved(input: &Vec<Vec<f32>>, output: &mut Vec<f32>, channels: usize) {
-        for (i, frame) in output.chunks_exact_mut(channels).enumerate() {
-            for (channel, sample) in frame.iter_mut().enumerate() {
-                *sample = input[channel][i];
-            }
-        }
-    }
-
-    fn interleaved_to_planar(input: &Vec<f32>, output: &mut Vec<Vec<f32>>, channels: usize) {
-        for (i, frame) in input.chunks_exact(channels).enumerate() {
-            for (channel, sample) in frame.iter().enumerate() {
-                output[channel][i] = *sample;
-            }
-        }
-    }
 }
 
 pub fn match_decoder(file: &Path) -> Option<Decoder> {
@@ -143,6 +125,8 @@ pub fn match_decoder(file: &Path) -> Option<Decoder> {
         "opus" => Some(Decoder::Opus(
             OpusReader::new(BufReader::new(File::open(file).ok()?)).ok()?,
         )),
-        _ => None,
+        extension => Some(Decoder::Symphonia(
+            SymphoniaWrapper::new(File::open(file).ok()?, extension).ok()?,
+        )),
     }
 }

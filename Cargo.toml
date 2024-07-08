@@ -25,6 +25,6 @@ log = "0.4" # logging
 magnum-opus = "0.3" # opus but magnum
 cpal = "0.15" # music output
 byteorder = "1.5" # Read bytes
-symphonia = { version =  "0.5", features = ["all-formats", "all-codecs"] } # Most formats
+symphonia = { version =  "0.5", features = ["all"] } # Most formats
 rubato = "0.15.0" # resampler
 anyhow = "1.0.86"

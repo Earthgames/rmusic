@@ -1,3 +1,4 @@
+pub mod audio_conversion;
 pub mod decoders;
 pub mod playback;
 
