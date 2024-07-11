@@ -36,8 +36,7 @@ impl SymphoniaWrapper {
 
         let meta_opts = MetadataOptions::default();
         let fmt_opts = FormatOptions {
-            // prebuild_seek_index: true,
-            // enable_gapless: true,
+            enable_gapless: true,
             ..Default::default()
         };
         let probed =
@@ -50,6 +49,8 @@ impl SymphoniaWrapper {
             .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
             .ok_or(Error::new(ErrorKind::Unsupported, "Unsupported codec"))?;
 
+        
+        // track info
         let time_base = track
             .codec_params
             .time_base
@@ -58,22 +59,23 @@ impl SymphoniaWrapper {
             .codec_params
             .n_frames
             .ok_or(Error::new(ErrorKind::Unsupported, "No length"))?;
+        let channels = track
+            .codec_params
+            .channels
+            .ok_or(Error::new(ErrorKind::Unsupported, "No channels"))?;
         let sample_rate = track
             .codec_params
             .sample_rate
             .ok_or(Error::new(ErrorKind::Unsupported, "No sample_rate"))?
             as usize;
-        // let start = track.codec_params.start_ts;
-        let dec_opts = DecoderOptions::default();
-
-        let mut decoder = symphonia::default::get_codecs().make(&track.codec_params, &dec_opts)?;
-        // println!("{}", length);
-        let channels = track
-            .codec_params
-            .channels
-            .ok_or(Error::new(ErrorKind::Unsupported, "No channels"))?;
         let track_id = track.id;
+
+        let dec_opts = DecoderOptions::default();
+        let mut decoder = symphonia::default::get_codecs().make(&track.codec_params, &dec_opts)?;
+        
         let mut buffer = VecDeque::new();
+        
+        // decode first valid packet
         let buffer_interleaved = loop {
             let packet = format.next_packet()?;
             // Error?
