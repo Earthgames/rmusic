@@ -81,6 +81,7 @@ impl PlaybackDaemon {
             self.add_buffer()?;
         }
         for i in data.iter_mut() {
+            //TODO add volume setting
             *i = self.buffer_output.pop_front().unwrap_or_else(|| {
                 error!("AHAH, No BuFFerS");
                 Sample::EQUILIBRIUM
@@ -122,6 +123,7 @@ impl PlaybackDaemon {
 
 pub fn match_decoder(file: &Path) -> Option<Decoder> {
     match file.extension()?.to_str()? {
+        //TODO show errors if not Ok
         "opus" => Some(Decoder::Opus(
             OpusReader::new(BufReader::new(File::open(file).ok()?)).ok()?,
         )),

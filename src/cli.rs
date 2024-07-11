@@ -3,6 +3,7 @@ use clap::Parser;
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 #[clap(propagate_version = true)]
+//TODO add volume setting
 pub struct Cli {
     /// Log level:
     /// 0 quiet,
