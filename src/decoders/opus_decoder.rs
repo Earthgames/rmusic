@@ -169,7 +169,7 @@ impl OpusReader {
         })
     }
 
-    fn add_buffer(&mut self) -> Result<u64> {
+    fn add_buffer(&mut self) -> Result<()> {
         let packet = &self.ogg_reader.read_packet()?;
         self.pos += 1;
 
@@ -193,7 +193,7 @@ impl OpusReader {
             self.left -= self.package_size as u64;
             self.buffer.extend(self.samples.iter());
         };
-        Ok(self.left)
+        Ok(())
     }
 
     /// Go to the target sample
@@ -225,13 +225,12 @@ impl OpusReader {
     /// Will fill up the internal buffer first, so it has enough samples
     /// to fill the data
     pub fn fill(&mut self, data: &mut [f32]) -> Result<u64> {
-        let mut left = 0;
         while data.len() > self.buffer.len() && !self.finished {
-            left = self.add_buffer()?;
+            self.add_buffer()?;
         }
         for i in data.iter_mut() {
             *i = self.buffer.pop_front().unwrap_or(Sample::EQUILIBRIUM)
         }
-        Ok(left)
+        Ok(self.left)
     }
 }

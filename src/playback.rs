@@ -29,8 +29,7 @@ pub struct PlaybackDaemon {
     _current: PathBuf,
     _queue: Vec<PathBuf>,
     decoder: Decoder,
-    pub left: u64,
-    _sample_rate_output: usize,
+    left: u64,
     resampler: FftFixedInOut<f32>,
     buffer_input_resampler: Vec<Vec<f32>>,
     buffer_output_resampler: Vec<Vec<f32>>,
@@ -71,7 +70,6 @@ impl PlaybackDaemon {
             _queue: vec![],
             decoder,
             left,
-            _sample_rate_output: sample_rate_output,
             resampler,
             buffer_input_resampler,
             buffer_output_resampler,
@@ -124,6 +122,14 @@ impl PlaybackDaemon {
 
     pub fn current_length(&self) -> u64 {
         self.decoder.length()
+    }
+
+    pub fn sample_rate_input(&self) -> usize {
+        self.decoder.sample_rate()
+    }
+
+    pub fn left(&self) -> u64 {
+        self.left
     }
 }
 

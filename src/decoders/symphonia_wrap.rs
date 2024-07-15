@@ -26,6 +26,7 @@ pub struct SymphoniaWrapper {
     sample_rate: usize,
     buffer_interleaved: SampleBuffer<f32>,
     buffer: VecDeque<f32>,
+    left: u64,
 }
 
 impl SymphoniaWrapper {
@@ -49,7 +50,6 @@ impl SymphoniaWrapper {
             .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
             .ok_or(Error::new(ErrorKind::Unsupported, "Unsupported codec"))?;
 
-        
         // track info
         let time_base = track
             .codec_params
@@ -72,9 +72,10 @@ impl SymphoniaWrapper {
 
         let dec_opts = DecoderOptions::default();
         let mut decoder = symphonia::default::get_codecs().make(&track.codec_params, &dec_opts)?;
-        
+
         let mut buffer = VecDeque::new();
-        
+        let mut left = length;
+
         // decode first valid packet
         let buffer_interleaved = loop {
             let packet = format.next_packet()?;
@@ -86,6 +87,7 @@ impl SymphoniaWrapper {
             while !format.metadata().is_latest() {
                 format.metadata().pop();
             }
+            left = length - packet.ts;
             match decoder.decode(&packet) {
                 Ok(decoded) => {
                     let mut buffer_interleaved: SampleBuffer<f32> = SampleBuffer::new(
@@ -110,10 +112,11 @@ impl SymphoniaWrapper {
             sample_rate,
             buffer_interleaved,
             buffer,
+            left,
         })
     }
 
-    pub fn add_buffer(&mut self) -> Result<u64> {
+    pub fn add_buffer(&mut self) -> Result<()> {
         let packet = self.format.next_packet()?;
 
         // Error?
@@ -131,24 +134,20 @@ impl SymphoniaWrapper {
 
         self.buffer.extend(self.buffer_interleaved.samples());
 
-        Ok(packet.ts)
+        self.left = self.length - packet.ts;
+        Ok(())
     }
 
     pub fn fill(&mut self, data: &mut [f32]) -> Result<u64> {
-        let mut left = 0;
         while data.len() > self.buffer.len() {
-            left = match self.add_buffer() {
-                Ok(l) => l,
-                Err(err) => {
-                    warn!("decode error: {}", err);
-                    left
-                }
+            if let Err(err) = self.add_buffer() {
+                warn!("decode error: {}", err);
             };
         }
         for i in data.iter_mut() {
             *i = self.buffer.pop_front().unwrap_or(Sample::EQUILIBRIUM)
         }
-        Ok(left)
+        Ok(self.left)
     }
 
     pub fn channels(&self) -> usize {

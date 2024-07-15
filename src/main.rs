@@ -101,13 +101,13 @@ fn main() {
             "q" => break,
             "p" => exit_on_error!(tx.send(PlaybackAction::Playing)),
             "s" => exit_on_error!(tx.send(PlaybackAction::Paused)),
-            "f" => exit_on_error!(tx.send(PlaybackAction::FastForward(5 * sample_rate.0 as u64))),
-            "r" => exit_on_error!(tx.send(PlaybackAction::Rewind(5 * sample_rate.0 as u64))),
+            "f" => exit_on_error!(tx.send(PlaybackAction::FastForward(5))),
+            "r" => exit_on_error!(tx.send(PlaybackAction::Rewind(5))),
             "g" => {
                 if args.len() < 2 {
                     continue;
                 }
-                let num = exit_on_error!(args[1].parse::<u64>()) * sample_rate.0 as u64;
+                let num = exit_on_error!(args[1].parse::<u64>());
                 exit_on_error!(tx.send(PlaybackAction::GoTo(num)))
             }
             _ => continue,
@@ -126,11 +126,11 @@ fn decode(
             PlaybackAction::Playing => playback_daemon.playing = true,
             PlaybackAction::Paused => playback_daemon.playing = false,
             PlaybackAction::GoTo(target) => playback_daemon
-                .goto(target)
+                .goto(target * playback_daemon.sample_rate_input() as u64)
                 .unwrap_or_else(|err| error!("Error in Stream: {}", err)),
             PlaybackAction::FastForward(amount) => {
-                let current = playback_daemon.current_length() - playback_daemon.left;
-                let target = current + amount;
+                let current = playback_daemon.current_length() - playback_daemon.left();
+                let target = current + amount * playback_daemon.sample_rate_input() as u64;
                 if target <= playback_daemon.current_length() {
                     playback_daemon
                         .goto(target)
@@ -138,17 +138,16 @@ fn decode(
                 }
             }
             PlaybackAction::Rewind(amount) => {
-                let current = playback_daemon.current_length() - playback_daemon.left;
+                let current = playback_daemon.current_length() - playback_daemon.left();
                 if amount <= current {
                     playback_daemon
-                        .goto(current - amount)
+                        .goto(current - amount * playback_daemon.sample_rate_input() as u64)
                         .unwrap_or_else(|err| error!("Error in Stream: {}", err))
                 }
             }
             _ => unimplemented!(),
         }
     }
-
     if playback_daemon.playing {
         playback_daemon.fill(data).unwrap_or_else(|err| {
             error!("Error in Stream: {}", err);
