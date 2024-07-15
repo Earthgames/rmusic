@@ -37,10 +37,15 @@ pub struct PlaybackDaemon {
     buffer_decoder_output: Vec<f32>,
     buffer_resampler_interleaved: Vec<f32>,
     buffer_output: VecDeque<f32>,
+    volume_level: f32,
 }
 
 impl PlaybackDaemon {
-    pub fn try_new(file: &str, sample_rate_output: usize) -> Option<PlaybackDaemon> {
+    pub fn try_new(
+        file: &str,
+        sample_rate_output: usize,
+        volume_level: f32,
+    ) -> Option<PlaybackDaemon> {
         let current = PathBuf::from(file);
         let decoder = match_decoder(&current)?;
         let left = decoder.length();
@@ -73,6 +78,7 @@ impl PlaybackDaemon {
             buffer_decoder_output,
             buffer_resampler_interleaved,
             buffer_output: VecDeque::new(),
+            volume_level,
         })
     }
 
@@ -81,11 +87,11 @@ impl PlaybackDaemon {
             self.add_buffer()?;
         }
         for i in data.iter_mut() {
-            //TODO add volume setting
-            *i = self.buffer_output.pop_front().unwrap_or_else(|| {
-                error!("AHAH, No BuFFerS");
-                Sample::EQUILIBRIUM
-            })
+            *i = self.volume_level
+                * self.buffer_output.pop_front().unwrap_or_else(|| {
+                    error!("AHAH, No BuFFerS");
+                    Sample::EQUILIBRIUM
+                })
         }
         Ok(())
     }

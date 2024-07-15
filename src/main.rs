@@ -73,8 +73,12 @@ fn main() {
     );
 
     // playback Daemon
-    let mut playback_daemon =
-        PlaybackDaemon::try_new(&cli.opus_file, sample_rate.0 as usize).unwrap();
+    let mut playback_daemon = PlaybackDaemon::try_new(
+        &cli.opus_file,
+        sample_rate.0 as usize,
+        cli.volume as f32 / 100.0,
+    )
+    .unwrap();
 
     // Thread communication
     let (tx, rx) = mpsc::channel();
