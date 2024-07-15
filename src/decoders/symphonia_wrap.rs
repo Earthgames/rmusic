@@ -6,6 +6,7 @@ use anyhow::Result;
 use cpal::Sample;
 use log::warn;
 use symphonia::core::audio::{SampleBuffer, SignalSpec};
+use symphonia::core::formats::{SeekMode, SeekTo};
 use symphonia::core::{
     audio::Channels,
     codecs::{Decoder, DecoderOptions, CODEC_TYPE_NULL},
@@ -160,5 +161,22 @@ impl SymphoniaWrapper {
 
     pub fn sample_rate(&self) -> usize {
         self.sample_rate
+    }
+
+    pub fn goto(&mut self, target: u64) -> Result<()> {
+        let seeked_to = self.format.seek(
+            SeekMode::Accurate,
+            SeekTo::TimeStamp {
+                ts: target,
+                track_id: self.track_id,
+            },
+        )?;
+        self.buffer.clear();
+        let diff = (seeked_to.required_ts - seeked_to.actual_ts) as usize;
+        while diff >= self.buffer.len() {
+            self.add_buffer()?;
+        }
+        self.buffer.drain(0..diff);
+        Ok(())
     }
 }

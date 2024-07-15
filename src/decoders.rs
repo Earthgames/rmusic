@@ -45,7 +45,7 @@ impl Decoder {
     pub fn goto(&mut self, target: u64) -> Result<()> {
         match self {
             Decoder::Opus(opus) => opus.goto(target),
-            _ => unimplemented!(),
+            Decoder::Symphonia(symp) => symp.goto(target),
         }
     }
 }
