@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::fmt::Display;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
@@ -135,12 +136,29 @@ impl PlaybackDaemon {
 
 pub fn match_decoder(file: &Path) -> Option<Decoder> {
     match file.extension()?.to_str()? {
-        //TODO show errors if not Ok
         "opus" => Some(Decoder::Opus(
-            OpusReader::new(BufReader::new(File::open(file).ok()?)).ok()?,
+            OpusReader::new(BufReader::new(File::open(file).print_err_ok()?)).print_err_ok()?,
         )),
         extension => Some(Decoder::Symphonia(
-            SymphoniaWrapper::new(File::open(file).ok()?, extension).ok()?,
+            SymphoniaWrapper::new(File::open(file).print_err_ok()?, extension).print_err_ok()?,
         )),
     }
+}
+
+impl<T, E: Display> PrintErrOk<T, E> for std::result::Result<T, E> {
+    fn print_err_ok(self) -> Option<T> {
+        match self {
+            Ok(t) => Some(t),
+            Err(err) => {
+                error!("{}", err);
+                None
+            }
+        }
+    }
+}
+
+trait PrintErrOk<T, E> {
+    /// Is `.ok()`,
+    /// but will print the error on an Err using the `error!()` macro
+    fn print_err_ok(self) -> Option<T>;
 }
