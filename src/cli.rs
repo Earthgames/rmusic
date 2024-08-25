@@ -18,5 +18,8 @@ pub struct Cli {
     #[clap(default_value_t = 100)]
     pub volume: u8,
 
+    #[clap(short, long)]
+    pub add_path: bool,
+
     pub opus_file: String,
 }

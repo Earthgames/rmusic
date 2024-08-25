@@ -6,9 +6,13 @@ authors = ["Earthgame_s <earthgame_s@outlook.com>"]
 license = "GPL-3.0-or-later"
 
 [dependencies]
-#directories = "5.0" # to get the user directories
+# Local helper things
+entity = { path = "entity" }
+migration = { path = "migration" } # depends on your needs
+# Other
+directories = "5.0" # to get the user directories
 #glob = "0.3" # to read directories
-#lofty = "0.18" # read tags and manipulate all music tags.
+lofty = "0.18" # read tags and manipulate all music tags.
 clap = { version = "4.0", features = [
     "derive",
     "cargo",
@@ -27,4 +31,6 @@ cpal = "0.15" # music output
 byteorder = "1.5" # Read bytes
 symphonia = { version =  "0.5", features = ["all"] } # Most formats
 rubato = "0.15.0" # resampler
-anyhow = "1.0.86"
+anyhow = "1.0.86" # error handeling
+sea-orm = { version = "1.0", features = ["sqlx-sqlite", "macros", "debug-print" ] } # sqlite orm
+tokio = { version = "1", features = ["full"] } # async

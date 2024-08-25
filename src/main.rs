@@ -1,4 +1,5 @@
 use std::io::stdin;
+use std::path::PathBuf;
 use std::sync::mpsc;
 use std::sync::mpsc::Receiver;
 
@@ -6,6 +7,7 @@ use clap::Parser;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Sample, SampleRate, SupportedStreamConfig};
 use log::{error, LevelFilter};
+use rmusic::database::Library;
 use simplelog::TermLogger;
 
 use cli::Cli;
@@ -25,7 +27,8 @@ macro_rules! exit_on_error {
     };
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let cli = Cli::parse();
     let mut log_config = simplelog::ConfigBuilder::new();
     let mut _quiet = false;
@@ -49,6 +52,16 @@ fn main() {
         simplelog::ColorChoice::Auto,
     )
     .unwrap();
+
+    //Database
+    let database = Library::try_new().await.expect("No database");
+
+    if cli.add_path {
+        database
+            .add_file(&PathBuf::from(&cli.opus_file))
+            .await
+            .expect("database problem");
+    }
 
     // Audio output
     let host = cpal::default_host();
