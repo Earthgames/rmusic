@@ -5,7 +5,10 @@ use std::path::Path;
 
 use crate::playback::match_decoder;
 
-use super::{date_from_tag, get_tag, number_from_tag, parse_date, string_from_tag, Library};
+use super::{
+    date_from_tag, get_tag, multiple_string_from_tag, number_from_tag, parse_date, string_from_tag,
+    Library,
+};
 
 impl Library {
     pub async fn add_file(&self, file: &Path) -> Result<()> {
@@ -15,7 +18,7 @@ impl Library {
         let Ok(file) = file.canonicalize() else {
             bail!("Could not canonicalize path to file")
         };
-        // if we can't get the file name here we crash
+        // If we can't get the file name here we return error
         info!(
             "Adding file: \"{}\"",
             file.file_name()
@@ -61,6 +64,8 @@ impl Library {
             warn!("Could not get album date from tag: {}", err);
             date
         });
+        // Genres
+        let genres = multiple_string_from_tag(&tag, &ItemKey::Genre);
         // Album Artist
         let album_artist_tag = string_from_tag(&tag, &ItemKey::AlbumArtist);
         if album_artist_tag.is_none() {
@@ -117,6 +122,15 @@ impl Library {
             .await?;
         self.insert_track_location_if_not_exist(file.display().to_string(), track_id)
             .await?;
+        for genre in genres {
+            if self
+                .insert_genres_if_not_exist(genre.clone(), track_id)
+                .await
+                .is_err()
+            {
+                warn!("Could not add genre \"{}\"", genre)
+            }
+        }
         info!("Successfully added file: \"{}\"", file.display());
         Ok(())
     }

@@ -71,9 +71,16 @@ fn parse_date(date: &str) -> Option<Date> {
 }
 
 fn string_from_tag(tag: &Tag, item_key: &ItemKey) -> Option<String> {
-    let string_tag = tag.get(&item_key)?;
+    let string_tag = tag.get(item_key)?;
     let string = string_tag.clone().into_value().into_string()?;
     Some(string)
+}
+
+/// Returns strings from all references of the item_key
+fn multiple_string_from_tag(tag: &Tag, item_key: &ItemKey) -> Vec<String> {
+    let string_tag = tag.get_strings(item_key);
+    let multiple_string: Vec<String> = string_tag.map(|x| String::from(x)).collect();
+    multiple_string
 }
 
 fn number_from_tag(tag: &Tag, item_key: &ItemKey) -> Result<i32> {

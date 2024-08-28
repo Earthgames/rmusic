@@ -1,6 +1,5 @@
 use anyhow::{bail, Result};
-use entity::track_location::ActiveModel;
-use entity::{artist, publisher, release, track, track_location};
+use entity::{artist, genre, publisher, release, track, track_location};
 use sea_orm::prelude::*;
 use sea_orm::{EntityTrait, QueryFilter, Set};
 
@@ -23,7 +22,7 @@ impl Library {
                 .one(&self.database)
                 .await?
             {
-                Some(e) => e.id,
+                Some(publisher) => publisher.id,
                 None => match publisher::Entity::insert(publisher_data)
                     .exec(&self.database)
                     .await
@@ -48,7 +47,7 @@ impl Library {
                 .await
                 .expect("could not fetch artist")
             {
-                Some(e) => e.id,
+                Some(artist) => artist.id,
                 None => match artist::Entity::insert(artist_data)
                     .exec(&self.database)
                     .await
@@ -65,7 +64,7 @@ impl Library {
         path: String,
         track_id: i32,
     ) -> Result<()> {
-        let track_data = ActiveModel {
+        let track_location_data = track_location::ActiveModel {
             path: Set(path.clone()),
             track_id: Set(track_id),
         };
@@ -74,17 +73,40 @@ impl Library {
             .one(&self.database)
             .await?
         {
-            Some(e) => {
-                if e.track_id != track_id {
-                    let mut track_location = <ActiveModel>::from(e);
+            Some(track_location) => {
+                // Update the database if there is a diffrent track_id
+                if track_location.track_id != track_id {
+                    let mut track_location = <track_location::ActiveModel>::from(track_location);
                     track_location.track_id = Set(track_id);
                     track_location.update(&self.database).await?;
                 }
             }
-            None => match track_location::Entity::insert(track_data)
+            None => match track_location::Entity::insert(track_location_data)
                 .exec(&self.database)
                 .await
             {
+                Ok(_) => (),
+                Err(err) => bail!("Could not insert track location into database: {err}"),
+            },
+        };
+        Ok(())
+    }
+
+    pub async fn insert_genres_if_not_exist(&self, name: String, track_id: i32) -> Result<()> {
+        let genre_data = genre::ActiveModel {
+            id: Default::default(),
+            name: Set(name.clone()),
+            track_id: Set(track_id),
+        };
+        match genre::Entity::find()
+            .filter(genre::Column::Name.eq(name))
+            .filter(genre::Column::TrackId.eq(track_id))
+            .one(&self.database)
+            .await?
+        {
+            // If it is already there we don't do anything
+            Some(_) => return Ok(()),
+            None => match genre::Entity::insert(genre_data).exec(&self.database).await {
                 Ok(_) => (),
                 Err(err) => bail!("Could not insert track location into database: {err}"),
             },
@@ -117,7 +139,7 @@ impl Library {
                 .one(&self.database)
                 .await?
             {
-                Some(e) => e.id,
+                Some(release) => release.id,
                 None => match release::Entity::insert(release_data)
                     .exec(&self.database)
                     .await
@@ -158,7 +180,7 @@ impl Library {
                 .one(&self.database)
                 .await?
             {
-                Some(e) => e.id,
+                Some(track) => track.id,
                 None => match track::Entity::insert(track_data).exec(&self.database).await {
                     Ok(track_insert) => track_insert.last_insert_id,
                     Err(err) => bail!("Could not insert track into database: {err}"),
