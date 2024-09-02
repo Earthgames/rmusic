@@ -2279,6 +2279,7 @@ dependencies = [
  "log",
  "magnum-opus",
  "migration",
+ "rand",
  "rubato",
  "sea-orm",
  "simplelog",
