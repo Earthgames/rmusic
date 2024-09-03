@@ -1,22 +1,32 @@
-use rand::{
-    distributions::{Distribution, WeightedIndex},
-    random, thread_rng, Rng,
-};
-use std::{collections::VecDeque, path::Path};
+use std::{collections::VecDeque, path::PathBuf};
+
+mod select_track;
 
 /// Struct that will play things next
-pub struct Queue<'a> {
-    queu_items: VecDeque<QueueItem<'a>>,
-    pub queu_options: QueueOptions,
+pub struct Queue {
+    pub queue_items: VecDeque<QueueItem>,
+    pub queue_options: QueueOptions,
     pub repeat_current: bool,
-    pub current_track: Option<&'a Path>,
+    pub current_track: Option<PathBuf>,
 }
 
 #[derive(Clone)]
-pub enum QueueItem<'a> {
-    Track(&'a Path),
-    PlayList((VecDeque<QueueItem<'a>>, QueueOptions)),
-    Album((VecDeque<&'a Path>, QueueOptions)),
+pub enum QueueItem {
+    Track(PathBuf),
+    PlayList((VecDeque<QueueItem>, QueueOptions)),
+    Album((VecDeque<PathBuf>, QueueOptions)),
+}
+
+impl QueueItem {
+    fn flatten(self) -> VecDeque<PathBuf> {
+        match self {
+            QueueItem::Track(track) => [track].into(),
+            QueueItem::PlayList((playlist, _)) => {
+                playlist.into_iter().flat_map(|i| i.flatten()).collect()
+            }
+            QueueItem::Album((album, _)) => album,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -31,86 +41,58 @@ enum ShuffelType {
     TrueRandom,
     /// List of weights
     WeightedRandom(Vec<usize>),
+    /// List of indexes to use
+    CustomList(VecDeque<usize>),
 }
 
-impl<'a> Queue<'a> {
-    pub fn new() -> Queue<'a> {
-        let queu_items = VecDeque::new();
-        let queu_options = QueueOptions {
+impl Queue {
+    pub fn new() -> Queue {
+        let queue_items = VecDeque::new();
+        let queue_options = QueueOptions {
             shuffel_type: ShuffelType::None,
             repeat: false,
         };
         let repeat_current = false;
         Queue {
-            queu_items,
-            queu_options,
+            queue_items,
+            queue_options,
             repeat_current,
             current_track: None,
         }
     }
 
-    pub fn next_track(mut self) -> Option<&'a Path> {
+    pub fn next_track(mut self) -> Option<PathBuf> {
         if self.repeat_current {
             return self.current_track;
         }
-        self.current_track = Some(Self::get_track_from_list(
-            self.queu_items,
-            &self.queu_options,
+        self.current_track = Some(select_track::get_track_from_list(
+            self.queue_items,
+            self.queue_options,
         )?);
         self.current_track
     }
 
-    fn get_track_from_list(
-        track_list: VecDeque<QueueItem<'a>>,
-        options: &QueueOptions,
-    ) -> Option<&'a Path> {
-        let chosen = Self::get_random(track_list, options)?;
-        Self::get_track_from_item(chosen)
+    pub fn append_track(mut self, track: PathBuf) {
+        self.queue_items.push_back(QueueItem::Track(track));
     }
 
-    fn get_track_from_item(queu_item: QueueItem<'a>) -> Option<&'a Path> {
-        match queu_item {
-            QueueItem::Track(track) => Some(track),
-            QueueItem::PlayList(playlist) => Self::get_track_from_list(playlist.0, &playlist.1),
-            QueueItem::Album(album) => Self::get_random(album.0, &album.1),
-        }
+    pub fn append_playlist(mut self, playlist: Vec<QueueItem>, options: QueueOptions) {
+        self.queue_items
+            .push_back(QueueItem::PlayList((playlist.into(), options)))
     }
 
-    fn get_random<T>(mut list: VecDeque<T>, options: &QueueOptions) -> Option<T>
-    where
-        T: Clone,
-    {
-        if list.is_empty() {
-            return None;
-        }
-        match &options.shuffel_type {
-            ShuffelType::None => {
-                if options.repeat {
-                    list.rotate_left(1);
-                    list.back().cloned()
-                } else {
-                    list.pop_front()
-                }
-            }
-            ShuffelType::TrueRandom => {
-                let chosen = thread_rng().gen_range(0..list.len());
-                if options.repeat {
-                    Some(list[chosen].clone())
-                } else {
-                    list.remove(chosen)
-                }
-            }
-            ShuffelType::WeightedRandom(weights) => {
-                let dist = WeightedIndex::new(weights).expect("List is Probably empty");
-                let chosen = dist.sample(&mut thread_rng());
-                if options.repeat {
-                    let result = list.remove(chosen).expect("Weird logic");
-                    list.push_back(result.clone());
-                    Some(result)
-                } else {
-                    list.remove(chosen)
-                }
-            }
-        }
+    pub fn append_album(mut self, album: Vec<PathBuf>, options: QueueOptions) {
+        self.queue_items
+            .push_back(QueueItem::Album((album.into(), options)))
+    }
+
+    /// Flattens the queue to only contain tracks
+    pub fn flatten(mut self) {
+        self.queue_items = self
+            .queue_items
+            .into_iter()
+            .flat_map(|i| i.flatten())
+            .map(|p| QueueItem::Track(p))
+            .collect()
     }
 }
