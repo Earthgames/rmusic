@@ -20,7 +20,7 @@ pub struct Library {
 impl Library {
     pub async fn try_new() -> Result<Library> {
         #[cfg(debug_assertions)]
-        let database_path = "sqlite:./database/main.sqlite?mode=rwc";
+        let database_path = "sqlite:./main.sqlite?mode=rwc";
         #[cfg(not(debug_assertions))]
         {
             let dir = directories::ProjectDirs::from("", "Earthgame_s", "rmusic")
