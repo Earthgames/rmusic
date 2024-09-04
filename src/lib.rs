@@ -2,6 +2,7 @@ pub mod audio_conversion;
 pub mod database;
 pub mod decoders;
 pub mod playback;
+pub mod playback_loop;
 pub mod queue;
 
 /// Shorthand for Result

@@ -11,19 +11,12 @@ entity = { path = "entity" }
 migration = { path = "migration" } # depends on your needs
 # Other
 directories = "5.0" # to get the user directories
-#glob = "0.3" # to read directories
 lofty = "0.18" # read tags and manipulate all music tags.
 clap = { version = "4.0", features = [
     "derive",
     "cargo",
     "env",
 ] } # command line interface
-#clap_complete = "4.4"
-#colored = "2.0" # color output and bold and other cool output for terminal
-#serde = { version = "1.0", features = [
-#    "derive",
-#] } # serializing and deserializing
-#toml = "0.8" # toml format
 simplelog = "0.12" # logging
 log = "0.4" # logging
 magnum-opus = "0.3" # opus but magnum
