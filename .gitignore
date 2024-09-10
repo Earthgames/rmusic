@@ -6,3 +6,4 @@ TestSamples
 .code
 heaptrack*
 main.sqlite
+Cargo.lock
