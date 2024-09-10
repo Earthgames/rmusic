@@ -1,7 +1,8 @@
 use crate::decoders::opus_decoder::OpusReader;
-use anyhow::Result;
+use anyhow::{Ok, Result};
 
 use self::symphonia_wrap::SymphoniaWrapper;
+use cpal::Sample;
 
 mod ogg_demuxer;
 pub mod opus_decoder;
@@ -10,6 +11,7 @@ pub mod symphonia_wrap;
 pub enum Decoder {
     Opus(OpusReader),
     Symphonia(SymphoniaWrapper),
+    None,
 }
 
 impl Decoder {
@@ -18,6 +20,12 @@ impl Decoder {
         match self {
             Decoder::Opus(opus) => opus.fill(data),
             Decoder::Symphonia(symp) => symp.fill(data),
+            Decoder::None => {
+                for i in data.iter_mut() {
+                    *i = Sample::EQUILIBRIUM
+                }
+                Ok(0)
+            }
         }
     }
 
@@ -25,6 +33,7 @@ impl Decoder {
         match self {
             Decoder::Opus(opus) => opus.opus_header.channels as usize,
             Decoder::Symphonia(symp) => symp.channels(),
+            Decoder::None => 0,
         }
     }
 
@@ -32,6 +41,7 @@ impl Decoder {
         match self {
             Decoder::Opus(_) => 48000,
             Decoder::Symphonia(symp) => symp.sample_rate(),
+            Decoder::None => 1,
         }
     }
 
@@ -39,6 +49,7 @@ impl Decoder {
         match self {
             Decoder::Opus(opus) => opus.length,
             Decoder::Symphonia(symp) => symp.length(),
+            Decoder::None => 0,
         }
     }
 
@@ -46,6 +57,7 @@ impl Decoder {
         match self {
             Decoder::Opus(opus) => opus.goto(target),
             Decoder::Symphonia(symp) => symp.goto(target),
+            Decoder::None => Ok(()),
         }
     }
 }
