@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use cpal::Sample;
 use log::error;
 use rubato::{FftFixedInOut, Resampler};
@@ -34,6 +34,7 @@ pub struct PlaybackDaemon {
     resampler: PlaybackResampler,
     buffer_output: VecDeque<f32>,
     volume_level: f32,
+    sample_rate_output: usize,
 }
 
 /// Helper struct for PlaybackDaemon
@@ -50,21 +51,16 @@ struct PlaybackResampler {
 }
 
 impl PlaybackDaemon {
-    pub fn new() -> PlaybackDaemon {
+    pub fn new(sample_rate_output: usize) -> PlaybackDaemon {
         PlaybackDaemon {
             playing: false,
             queue: Queue::new(),
             decoder: Decoder::None,
             left: 0,
-            resampler: PlaybackResampler {
-                fixed_in_out_resampler: FftFixedInOut::new(1, 1, 0, 0).expect("Should be fine"),
-                decoder_output: vec![],
-                input: vec![],
-                output: vec![],
-                interleaved: vec![],
-            },
+            resampler: PlaybackResampler::new(1, 1, 0).expect("should be fine"),
             buffer_output: VecDeque::new(),
             volume_level: 0.0,
+            sample_rate_output,
         }
     }
 
@@ -76,36 +72,21 @@ impl PlaybackDaemon {
         let current = PathBuf::from(file);
         let decoder = match_decoder(&current)?;
         let left = decoder.length();
-        let sample_rate_input = decoder.sample_rate();
-        let resampler = FftFixedInOut::new(
-            sample_rate_input,
+        let resampler = PlaybackResampler::new(
+            decoder.sample_rate(),
             sample_rate_output,
-            sample_rate_input / 500,
             decoder.channels(),
-        )
-        .ok()?;
-        // Buffers
-        let input_resampler = resampler.input_buffer_allocate(true);
-        let output_resampler = resampler.output_buffer_allocate(true);
-        let decoder_output: Vec<f32> =
-            vec![Sample::EQUILIBRIUM; resampler.input_frames_max() * decoder.channels()];
-        let resampler_interleaved: Vec<f32> =
-            vec![Sample::EQUILIBRIUM; resampler.output_frames_max() * decoder.channels()];
+        )?;
 
         Some(PlaybackDaemon {
             playing: true,
             queue: Queue::new(),
             decoder,
             left,
-            resampler: PlaybackResampler {
-                fixed_in_out_resampler: resampler,
-                decoder_output,
-                input: input_resampler,
-                output: output_resampler,
-                interleaved: resampler_interleaved,
-            },
+            resampler,
             buffer_output: VecDeque::new(),
             volume_level,
+            sample_rate_output,
         })
     }
 
@@ -123,6 +104,7 @@ impl PlaybackDaemon {
         Ok(())
     }
 
+    // add to internal buffer
     fn add_buffer(&mut self) -> Result<()> {
         self.left = self.decoder.fill(&mut self.resampler.decoder_output)?;
 
@@ -150,6 +132,55 @@ impl PlaybackDaemon {
 }
 
 impl PlaybackResampler {
+    fn new(
+        sample_rate_input: usize,
+        sample_rate_output: usize,
+        channels: usize,
+    ) -> Option<PlaybackResampler> {
+        let fixed_in_out_resampler = FftFixedInOut::new(
+            sample_rate_input,
+            sample_rate_output,
+            sample_rate_input / 500,
+            channels,
+        )
+        .ok()?;
+        // Buffers
+        let input = fixed_in_out_resampler.input_buffer_allocate(true);
+        let output = fixed_in_out_resampler.output_buffer_allocate(true);
+        let decoder_output: Vec<f32> =
+            vec![Sample::EQUILIBRIUM; fixed_in_out_resampler.input_frames_max() * channels];
+        let interleaved: Vec<f32> =
+            vec![Sample::EQUILIBRIUM; fixed_in_out_resampler.output_frames_max() * channels];
+
+        Some(PlaybackResampler {
+            fixed_in_out_resampler,
+            decoder_output,
+            input,
+            output,
+            interleaved,
+        })
+    }
+
+    fn change_sample_rate(
+        &mut self,
+        sample_rate_input: usize,
+        sample_rate_output: usize,
+        channels: usize,
+    ) -> Result<()> {
+        self.fixed_in_out_resampler = FftFixedInOut::new(
+            sample_rate_input,
+            sample_rate_output,
+            sample_rate_input / 500,
+            channels,
+        )?;
+        // Buffers
+        let decoder_output: Vec<f32> =
+            vec![Sample::EQUILIBRIUM; self.fixed_in_out_resampler.input_frames_max() * channels];
+        let resampler_interleaved: Vec<f32> =
+            vec![Sample::EQUILIBRIUM; self.fixed_in_out_resampler.output_frames_max() * channels];
+        Ok(())
+    }
+
     fn resample(&mut self, channels: usize) -> Result<()> {
         interleaved_to_planar(&self.decoder_output, &mut self.input, channels);
 
@@ -159,12 +190,6 @@ impl PlaybackResampler {
         planar_to_interleaved(&self.output, &mut self.interleaved, channels);
 
         Ok(())
-    }
-}
-
-impl Default for PlaybackDaemon {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
