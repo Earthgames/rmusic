@@ -11,7 +11,7 @@ use rubato::{FftFixedInOut, Resampler};
 
 use crate::audio_conversion::{interleaved_to_planar, planar_to_interleaved};
 use crate::decoders::{opus_decoder::OpusReader, symphonia_wrap::SymphoniaWrapper, Decoder};
-use crate::queue::Queue;
+use crate::queue::{Queue, QueueItem};
 
 #[derive(Debug)]
 pub enum PlaybackAction {
@@ -24,6 +24,7 @@ pub enum PlaybackAction {
     /// Number of samples to go to in a song
     GoTo(u64),
     Que(PathBuf),
+    Play(PathBuf),
 }
 
 pub struct PlaybackDaemon {
@@ -57,7 +58,7 @@ impl PlaybackDaemon {
             queue: Queue::new(),
             decoder: Decoder::None,
             left: 0,
-            resampler: PlaybackResampler::new(1, 1, 0).expect("should be fine"),
+            resampler: PlaybackResampler::new(1, 1, 2).expect("should be fine"),
             buffer_output: VecDeque::new(),
             volume_level: 0.0,
             sample_rate_output,
@@ -114,8 +115,27 @@ impl PlaybackDaemon {
         Ok(())
     }
 
+    // set up a track to be decoded
+    fn set_track(&mut self, track: PathBuf) -> Result<()> {
+        self.decoder = match_decoder(&track).ok_or(anyhow!("Could not match decoder"))?;
+        self.left = self.decoder.length();
+        self.resampler.change_sample_rate(
+            self.decoder.sample_rate(),
+            self.sample_rate_output,
+            self.decoder.channels(),
+        )?;
+
+        self.queue.current_track = Some(track);
+        Ok(())
+    }
+
     pub fn goto(&mut self, target: u64) -> Result<()> {
         self.decoder.goto(target)
+    }
+
+    pub fn play(&mut self, track: PathBuf, context: Vec<QueueItem>) -> Result<()> {
+        self.queue.queue_items = context.into();
+        self.set_track(track)
     }
 
     pub fn current_length(&self) -> u64 {
@@ -167,17 +187,38 @@ impl PlaybackResampler {
         sample_rate_output: usize,
         channels: usize,
     ) -> Result<()> {
+        let channel_change = self.fixed_in_out_resampler.nbr_channels().cmp(&channels);
         self.fixed_in_out_resampler = FftFixedInOut::new(
             sample_rate_input,
             sample_rate_output,
             sample_rate_input / 500,
             channels,
         )?;
+
+        match channel_change {
+            std::cmp::Ordering::Equal => {
+                rubato::resize_buffer(
+                    &mut self.input,
+                    self.fixed_in_out_resampler.input_frames_max(),
+                );
+                rubato::resize_buffer(
+                    &mut self.output,
+                    self.fixed_in_out_resampler.output_frames_max(),
+                );
+            }
+            std::cmp::Ordering::Less => unimplemented!("Can't change channels for now :)"),
+            std::cmp::Ordering::Greater => unimplemented!("Can't change channels for now :)"),
+        }
+
         // Buffers
-        let decoder_output: Vec<f32> =
-            vec![Sample::EQUILIBRIUM; self.fixed_in_out_resampler.input_frames_max() * channels];
-        let resampler_interleaved: Vec<f32> =
-            vec![Sample::EQUILIBRIUM; self.fixed_in_out_resampler.output_frames_max() * channels];
+        self.decoder_output.resize(
+            self.fixed_in_out_resampler.input_frames_max() * channels,
+            Sample::EQUILIBRIUM,
+        );
+        self.interleaved.resize(
+            self.fixed_in_out_resampler.output_frames_max() * channels * channels,
+            Sample::EQUILIBRIUM,
+        );
         Ok(())
     }
 

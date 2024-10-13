@@ -35,6 +35,9 @@ pub fn playback_loop(
                         .unwrap_or_else(|err| error!("Error in Stream: {}", err))
                 }
             }
+            PlaybackAction::Play(track) => playback_daemon
+                .play(track, vec![])
+                .unwrap_or_else(|err| error!("Error in Stream: {}", err)),
             _ => unimplemented!(),
         }
     }
