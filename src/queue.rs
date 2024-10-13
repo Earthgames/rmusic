@@ -92,7 +92,13 @@ impl Queue {
             .queue_items
             .into_iter()
             .flat_map(|i| i.flatten())
-            .map(|p| QueueItem::Track(p))
+            .map(QueueItem::Track)
             .collect()
+    }
+}
+
+impl Default for Queue {
+    fn default() -> Self {
+        Self::new()
     }
 }

@@ -58,7 +58,7 @@ where
             list.get(index).cloned()
         }
         ShuffelType::WeightedRandom(weights) => {
-            let dist = WeightedIndex::new(weights).expect("List is Probably empty");
+            let dist = WeightedIndex::new(weights).expect("List is probably empty");
             let chosen = dist.sample(&mut thread_rng());
             if options.repeat {
                 let result = list.remove(chosen).expect("Weird logic");
