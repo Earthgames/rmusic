@@ -15,6 +15,7 @@ pub fn playback_loop(
         match status {
             PlaybackAction::Playing => playback_daemon.playing = true,
             PlaybackAction::Paused => playback_daemon.playing = false,
+            PlaybackAction::PlayPause => playback_daemon.playing = !playback_daemon.playing,
             PlaybackAction::GoTo(target) => playback_daemon
                 .goto(target * playback_daemon.sample_rate_input() as u64)
                 .unwrap_or_else(|err| error!("Error in Stream: {}", err)),

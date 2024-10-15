@@ -17,6 +17,8 @@ use crate::queue::{Queue, QueueItem};
 pub enum PlaybackAction {
     Playing,
     Paused,
+    /// Toggle between playing and paused
+    PlayPause,
     /// Number of samples to go back
     Rewind(u64),
     /// Number of samples to skip
