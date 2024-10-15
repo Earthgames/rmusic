@@ -36,7 +36,7 @@ pub struct PlaybackDaemon {
     left: u64,
     resampler: PlaybackResampler,
     buffer_output: VecDeque<f32>,
-    volume_level: f32,
+    pub volume_level: f32,
     sample_rate_output: usize,
 }
 
@@ -137,7 +137,9 @@ impl PlaybackDaemon {
 
     pub fn play(&mut self, track: PathBuf, context: Vec<QueueItem>) -> Result<()> {
         self.queue.queue_items = context.into();
-        self.set_track(track)
+        self.set_track(track)?;
+        self.playing = true;
+        Ok(())
     }
 
     pub fn current_length(&self) -> u64 {
