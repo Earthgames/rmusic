@@ -216,7 +216,7 @@ impl PlaybackResampler {
             Sample::EQUILIBRIUM,
         );
         self.interleaved.resize(
-            self.fixed_in_out_resampler.output_frames_max() * channels * channels,
+            self.fixed_in_out_resampler.output_frames_max() * channels,
             Sample::EQUILIBRIUM,
         );
         Ok(())
