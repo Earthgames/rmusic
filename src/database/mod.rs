@@ -12,6 +12,7 @@ use sea_orm::{prelude::*, ConnectOptions, Database};
 
 pub mod files;
 pub mod insert;
+pub mod select;
 
 pub struct Library {
     database: DatabaseConnection,
