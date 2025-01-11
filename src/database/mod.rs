@@ -10,6 +10,15 @@ use lofty::TaggedFileExt;
 use migration::MigratorTrait;
 use sea_orm::{prelude::*, ConnectOptions, Database};
 
+pub use entity::artist::Model as Artist;
+pub use entity::genre::Model as Genre;
+pub use entity::playlist::Model as Playlist;
+pub use entity::playlist_item::Model as PlaylistItem;
+pub use entity::publisher::Model as Publisher;
+pub use entity::release::Model as Release;
+pub use entity::track::Model as Track;
+pub use entity::track_location::Model as TrackLocation;
+
 pub mod files;
 pub mod insert;
 pub mod select;
