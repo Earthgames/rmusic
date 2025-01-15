@@ -4,7 +4,7 @@ use std::io::{BufReader, ErrorKind, Result, Seek, SeekFrom};
 
 use byteorder::{LittleEndian, ReadBytesExt};
 
-const OGGMAXPAGESIZE: u16 = 65307;
+const _OGGMAXPAGESIZE: u16 = 65307;
 
 pub struct OggReader {
     file_reader: BufReader<File>,

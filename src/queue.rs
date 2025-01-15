@@ -36,7 +36,7 @@ pub struct QueueOptions {
 }
 
 #[derive(Clone)]
-enum ShuffelType {
+pub enum ShuffelType {
     None,
     TrueRandom,
     /// List of weights

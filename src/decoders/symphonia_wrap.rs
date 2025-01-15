@@ -21,7 +21,7 @@ pub struct SymphoniaWrapper {
     format: Box<dyn FormatReader>,
     decoder: Box<dyn Decoder>,
     track_id: u32,
-    time_base: TimeBase,
+    _time_base: TimeBase,
     length: u64,
     channels: Channels,
     sample_rate: usize,
@@ -52,7 +52,7 @@ impl SymphoniaWrapper {
             .ok_or(Error::new(ErrorKind::Unsupported, "Unsupported codec"))?;
 
         // track info
-        let time_base = track
+        let _time_base = track
             .codec_params
             .time_base
             .ok_or(Error::new(ErrorKind::Unsupported, "No time base"))?;
@@ -75,7 +75,7 @@ impl SymphoniaWrapper {
         let mut decoder = symphonia::default::get_codecs().make(&track.codec_params, &dec_opts)?;
 
         let mut buffer = VecDeque::new();
-        let mut left = length;
+        let mut left;
 
         // decode first valid packet
         let buffer_interleaved = loop {
@@ -107,7 +107,7 @@ impl SymphoniaWrapper {
             format,
             decoder,
             track_id,
-            time_base,
+            _time_base,
             length,
             channels,
             sample_rate,
