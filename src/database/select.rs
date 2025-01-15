@@ -4,36 +4,33 @@ use sea_orm::prelude::*;
 use sea_orm::EntityTrait;
 
 impl Library {
-    pub async fn artists(&self) -> Result<Vec<artist::Model>> {
-        artist::Entity::find().all(&self.database).await
-    }
-
-    async fn artist_tracks(&self, artist: &artist::Model) -> Result<Vec<track::Model>> {
-        artist.find_related(track::Entity).all(&self.database).await
-    }
-
-    pub async fn artist_releases(&self, artist: &artist::Model) -> Result<Vec<release::Model>> {
-        artist
-            .find_related(release::Entity)
+    pub async fn model_related<M, R>(&self, model: &M) -> Result<Vec<R::Model>>
+    where
+        M: ModelTrait,
+        R: EntityTrait,
+        M::Entity: Related<R>,
+    {
+        model
+            .find_related::<R>(R::default())
             .all(&self.database)
             .await
     }
 
-    pub async fn release_tracks(&self, release: &release::Model) -> Result<Vec<track::Model>> {
-        release
-            .find_related(track::Entity)
-            .all(&self.database)
-            .await
+    pub async fn find_all<E>(&self) -> Result<Vec<E::Model>>
+    where
+        E: EntityTrait,
+    {
+        E::find().all(&self.database).await
     }
 
     pub async fn artist_discography(
         &self,
         artist: &artist::Model,
     ) -> Result<Vec<(release::Model, Vec<track::Model>)>> {
-        let releases = self.artist_releases(artist).await?;
+        let releases = self.model_related::<_, release::Entity>(artist).await?;
         let mut release_tracks = vec![];
         for release in &releases {
-            release_tracks.push(self.release_tracks(release).await?);
+            release_tracks.push(self.model_related::<_, track::Entity>(release).await?);
         }
         Ok(releases.into_iter().zip(release_tracks).collect())
     }
