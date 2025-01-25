@@ -22,6 +22,7 @@ pub use entity::track_location::Model as TrackLocation;
 
 pub mod files;
 pub mod insert;
+pub mod library_view;
 pub mod select;
 
 pub struct Library {
