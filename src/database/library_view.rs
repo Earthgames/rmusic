@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use super::Library;
 use entity::{artist, release, track};
 use entity::{genre, publisher};
@@ -20,31 +18,17 @@ use sea_orm::EntityTrait;
 ///     C: EntityTrait,
 ///     C::Model: Viewable,
 /// ```
-pub struct LibraryView<A, B, C, V>
+pub struct LibraryView<A, B, C>
 where
-    A: L1<B, C, V>,
-    B: L2<C, V>,
-    C: L3<V>,
+    A: L1<B, C>,
+    B: L2<C>,
+    C: L3,
 {
     list: Level1<A, B, C>,
-    _view: PhantomData<V>,
 }
 
-pub trait Viewable<V> {
-    fn to_view(&self) -> V;
-}
-
-macro_rules! impl_viewable {
-    ($($i:ident),+) => {$(
-        impl Viewable<String> for $i::Model {
-            fn to_view(&self) -> String {
-                self.name.clone()
-            }
-        })+
-    };
-}
-
-impl_viewable!(artist, release, track, publisher, genre);
+pub type Level1<A, B, C> = Vec<(A, Option<Level2<B, C>>)>;
+pub type Level2<B, C> = Vec<(B, Option<Vec<C>>)>;
 
 pub trait IntoFR<T> {
     fn into(self) -> T;
@@ -63,27 +47,34 @@ macro_rules! impl_bs {
 
 impl_bs!(artist, release, track, publisher, genre);
 
-pub type Level1<A, B, C> = Vec<(A, Option<Level2<B, C>>)>;
-pub type Level2<B, C> = Vec<(B, Option<Vec<C>>)>;
-
-pub trait L1<A, B, V>: Sized + Viewable<V> + Sync
+pub trait L1<A, B>: Sized + Sync
 where
-    A: L2<B, V>,
-    B: L3<V>,
+    A: L2<B>,
+    B: L3,
 {
     fn get_all(library: &Library) -> impl std::future::Future<Output = Result<Vec<Self>>> + Send;
     fn get_l2(&self, library: &Library)
         -> impl std::future::Future<Output = Result<Vec<A>>> + Send;
 }
 
-impl<A, B, C, V> L1<B, C, V> for A
+pub trait L2<A>
 where
-    A: Viewable<V> + ModelTrait + Sync,
+    A: L3,
+{
+    fn get_l3(&self, library: &Library)
+        -> impl std::future::Future<Output = Result<Vec<A>>> + Send;
+}
+
+pub trait L3: ModelTrait {}
+
+impl<A, B, C> L1<B, C> for A
+where
+    A: ModelTrait + Sync,
     <<A as ModelTrait>::Entity as EntityTrait>::Model: IntoFR<A>,
     A::Entity: Related<B::Entity>,
-    B: L2<C, V> + ModelTrait,
+    B: L2<C> + ModelTrait,
     <<B as ModelTrait>::Entity as EntityTrait>::Model: IntoFR<B>,
-    C: L3<V>,
+    C: L3,
 {
     async fn get_all(library: &Library) -> Result<Vec<Self>> {
         library
@@ -100,10 +91,10 @@ where
     }
 }
 
-impl<A, B, V> L2<B, V> for A
+impl<A, B> L2<B> for A
 where
-    A: ModelTrait + std::marker::Sync + Viewable<V>,
-    B: L3<V>,
+    A: ModelTrait + std::marker::Sync,
+    B: L3,
     <<B as ModelTrait>::Entity as EntityTrait>::Model: IntoFR<B>,
     A::Entity: Related<B::Entity>,
 {
@@ -115,41 +106,27 @@ where
     }
 }
 
-pub trait L2<A, V>: Viewable<V>
-where
-    A: L3<V>,
-{
-    fn get_l3(&self, library: &Library)
-        -> impl std::future::Future<Output = Result<Vec<A>>> + Send;
-}
+impl<A> L3 for A where A: ModelTrait {}
 
-pub trait L3<V>: ModelTrait + Viewable<V> {}
-
-impl<A, B, C, V> Default for LibraryView<A, B, C, V>
+impl<A, B, C> Default for LibraryView<A, B, C>
 where
-    A: L1<B, C, V>,
-    B: L2<C, V>,
-    C: L3<V>,
+    A: L1<B, C>,
+    B: L2<C>,
+    C: L3,
 {
     fn default() -> Self {
-        Self {
-            list: vec![],
-            _view: PhantomData,
-        }
+        Self { list: vec![] }
     }
 }
 
-impl<A, B, C, V> LibraryView<A, B, C, V>
+impl<A, B, C> LibraryView<A, B, C>
 where
-    A: L1<B, C, V>,
-    B: L2<C, V>,
-    C: L3<V>,
+    A: L1<B, C>,
+    B: L2<C>,
+    C: L3,
 {
-    pub async fn new(library: &Library) -> Result<LibraryView<A, B, C, V>> {
-        let mut view_thing = LibraryView {
-            list: vec![],
-            _view: PhantomData,
-        };
+    pub async fn new(library: &Library) -> Result<LibraryView<A, B, C>> {
+        let mut view_thing = LibraryView { list: vec![] };
         view_thing.sync_with_database_l1(library).await?;
         Ok(view_thing)
     }
