@@ -3,6 +3,7 @@ use entity::{artist, release, track};
 use entity::{genre, publisher};
 use sea_orm::prelude::*;
 use sea_orm::EntityTrait;
+use std::fmt::Debug;
 
 /// Hate all the traits?
 /// Me to, if you find a solution please let me know
@@ -47,7 +48,7 @@ macro_rules! impl_bs {
 
 impl_bs!(artist, release, track, publisher, genre);
 
-pub trait L1<A, B>: Sized + Sync
+pub trait L1<A, B>: Sized + Sync + Debug
 where
     A: L2<B>,
     B: L3,
@@ -57,7 +58,7 @@ where
         -> impl std::future::Future<Output = Result<Vec<A>>> + Send;
 }
 
-pub trait L2<A>
+pub trait L2<A>: Debug
 where
     A: L3,
 {
@@ -65,7 +66,7 @@ where
         -> impl std::future::Future<Output = Result<Vec<A>>> + Send;
 }
 
-pub trait L3: ModelTrait {}
+pub trait L3: ModelTrait + Debug {}
 
 impl<A, B, C> L1<B, C> for A
 where
