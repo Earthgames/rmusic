@@ -18,8 +18,8 @@ pub fn get_track_from_list(
 fn get_track_from_item(queue_item: QueueItem) -> Option<PathBuf> {
     match queue_item {
         QueueItem::Track(track) => Some(track),
-        QueueItem::PlayList((playlist, options)) => get_track_from_list(playlist, options),
-        QueueItem::Album((album, options)) => get_random(album, options),
+        QueueItem::PlayList(playlist, options) => get_track_from_list(playlist, options),
+        QueueItem::Album(album, options) => get_random(album, options),
     }
 }
 

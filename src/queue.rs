@@ -13,18 +13,18 @@ pub struct Queue {
 #[derive(Clone)]
 pub enum QueueItem {
     Track(PathBuf),
-    PlayList((VecDeque<QueueItem>, QueueOptions)),
-    Album((VecDeque<PathBuf>, QueueOptions)),
+    PlayList(VecDeque<QueueItem>, QueueOptions),
+    Album(VecDeque<PathBuf>, QueueOptions),
 }
 
 impl QueueItem {
     fn flatten(self) -> VecDeque<PathBuf> {
         match self {
             QueueItem::Track(track) => [track].into(),
-            QueueItem::PlayList((playlist, _)) => {
+            QueueItem::PlayList(playlist, _) => {
                 playlist.into_iter().flat_map(|i| i.flatten()).collect()
             }
-            QueueItem::Album((album, _)) => album,
+            QueueItem::Album(album, _) => album,
         }
     }
 }
@@ -33,6 +33,15 @@ impl QueueItem {
 pub struct QueueOptions {
     pub shuffel_type: ShuffelType,
     pub repeat: bool,
+}
+
+impl Default for QueueOptions {
+    fn default() -> Self {
+        Self {
+            shuffel_type: ShuffelType::None,
+            repeat: false,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -78,12 +87,12 @@ impl Queue {
 
     pub fn append_playlist(mut self, playlist: Vec<QueueItem>, options: QueueOptions) {
         self.queue_items
-            .push_back(QueueItem::PlayList((playlist.into(), options)))
+            .push_back(QueueItem::PlayList(playlist.into(), options))
     }
 
     pub fn append_album(mut self, album: Vec<PathBuf>, options: QueueOptions) {
         self.queue_items
-            .push_back(QueueItem::Album((album.into(), options)))
+            .push_back(QueueItem::Album(album.into(), options))
     }
 
     /// Flattens the queue to only contain tracks
