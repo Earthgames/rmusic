@@ -4,7 +4,7 @@ use sea_orm::prelude::*;
 use sea_orm::EntityTrait;
 
 impl Library {
-    pub async fn model_related<M, R>(&self, model: &M) -> Result<Vec<R::Model>>
+    pub async fn models_related<M, R>(&self, model: &M) -> Result<Vec<R::Model>>
     where
         M: ModelTrait,
         R: EntityTrait,
@@ -13,6 +13,18 @@ impl Library {
         model
             .find_related::<R>(R::default())
             .all(&self.database)
+            .await
+    }
+
+    pub async fn model_related<M, R>(&self, model: &M) -> Result<Option<R::Model>>
+    where
+        M: ModelTrait,
+        R: EntityTrait,
+        M::Entity: Related<R>,
+    {
+        model
+            .find_related::<R>(R::default())
+            .one(&self.database)
             .await
     }
 
@@ -27,12 +39,11 @@ impl Library {
         &self,
         artist: &artist::Model,
     ) -> Result<Vec<(release::Model, Vec<track::Model>)>> {
-        let releases = self.model_related::<_, release::Entity>(artist).await?;
-        let mut release_tracks = vec![];
-        for release in &releases {
-            release_tracks.push(self.model_related::<_, track::Entity>(release).await?);
-        }
-        Ok(releases.into_iter().zip(release_tracks).collect())
+        artist
+            .find_related(release::Entity)
+            .find_with_related(track::Entity)
+            .all(&self.database)
+            .await
     }
 }
 

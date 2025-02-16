@@ -20,11 +20,13 @@ pub use entity::release::Model as Release;
 pub use entity::track::Model as Track;
 pub use entity::track_location::Model as TrackLocation;
 
+pub mod context;
 pub mod files;
 pub mod insert;
 pub mod library_view;
 pub mod select;
 
+/// Main db struct
 pub struct Library {
     database: DatabaseConnection,
 }
