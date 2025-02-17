@@ -1,3 +1,6 @@
+use crate::queue::QueueItem;
+
+use super::context::GetContext;
 use super::Library;
 use entity::{artist, release, track};
 use entity::{genre, publisher};
@@ -48,7 +51,7 @@ macro_rules! impl_bs {
 
 impl_bs!(artist, release, track, publisher, genre);
 
-pub trait L1<A, B>: Sized + Sync + Debug
+pub trait L1<A, B>: Sized + Sync + Debug + GetContext
 where
     A: L2<B>,
     B: L3,
@@ -58,7 +61,7 @@ where
         -> impl std::future::Future<Output = Result<Vec<A>>> + Send;
 }
 
-pub trait L2<A>: Debug
+pub trait L2<A>: Debug + GetContext
 where
     A: L3,
 {
@@ -66,11 +69,11 @@ where
         -> impl std::future::Future<Output = Result<Vec<A>>> + Send;
 }
 
-pub trait L3: ModelTrait + Debug {}
+pub trait L3: ModelTrait + Debug + GetContext {}
 
 impl<A, B, C> L1<B, C> for A
 where
-    A: ModelTrait + Sync,
+    A: ModelTrait + Sync + GetContext,
     <<A as ModelTrait>::Entity as EntityTrait>::Model: IntoFR<A>,
     A::Entity: Related<B::Entity>,
     B: L2<C> + ModelTrait,
@@ -94,8 +97,8 @@ where
 
 impl<A, B> L2<B> for A
 where
-    A: ModelTrait + std::marker::Sync,
-    B: L3,
+    A: ModelTrait + std::marker::Sync + GetContext,
+    B: L3 + GetContext,
     <<B as ModelTrait>::Entity as EntityTrait>::Model: IntoFR<B>,
     A::Entity: Related<B::Entity>,
 {
@@ -107,7 +110,7 @@ where
     }
 }
 
-impl<A> L3 for A where A: ModelTrait {}
+impl<A> L3 for A where A: ModelTrait + GetContext {}
 
 impl<A, B, C> Default for LibraryView<A, B, C>
 where
@@ -220,6 +223,8 @@ where
     pub fn get_l1(&self) -> Vec<&'_ A> {
         self.list.iter().map(|x| &x.0).collect()
     }
+
+    pub fn get_context_l1(&self) -> Result<QueueItem>
 
     // Get a list of items in level 2, B in the type definition
     pub fn get_l2(&self, item: usize) -> Vec<&'_ B> {
