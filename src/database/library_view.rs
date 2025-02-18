@@ -1,6 +1,6 @@
 use crate::queue::QueueItem;
 
-use super::context::GetContext;
+use super::context::{GetContext, TrackResult};
 use super::Library;
 use entity::{artist, release, track};
 use entity::{genre, publisher};
@@ -15,12 +15,9 @@ use std::fmt::Debug;
 /// or use
 /// ```rust
 /// where
-///     A: Related<B> + EntityTrait,
-///     A::Model: Viewable,
-///     B: Related<C> + EntityTrait,
-///     B::Model: Viewable,
-///     C: EntityTrait,
-///     C::Model: Viewable,
+///     A: L1<B, C>,
+///     B: L2<C>,
+///     C: L3,
 /// ```
 pub struct LibraryView<A, B, C>
 where
@@ -219,14 +216,36 @@ where
         self.sync_with_database_l3(library).await
     }
 
-    // Get a list of all items in level 1, A in the type definition
+    /// Get a list of all items in level 1, A in the type definition
     pub fn get_l1(&self) -> Vec<&'_ A> {
         self.list.iter().map(|x| &x.0).collect()
     }
 
-    pub fn get_context_l1(&self) -> Result<QueueItem>
+    /// Get the context(playable items) of an item in level 1
+    /// index is the item you want to play out of level 1
+    pub async fn get_context_l1(&self, library: &Library, index: usize) -> TrackResult<QueueItem> {
+        A::get_context_from_list(self.get_l1(), index, library).await
+    }
+    /// Get the context(playable items) of an item in level 3
+    /// index is (index level 1, index level 2)
+    pub async fn get_context_l2(
+        &self,
+        library: &Library,
+        index: (usize, usize),
+    ) -> TrackResult<QueueItem> {
+        B::get_context_from_list(self.get_l2(index.0), index.1, library).await
+    }
+    /// Get the context(playable items) of an item in level 3
+    /// index is (index level 1, index level 2, index level 3)
+    pub async fn get_context_l3(
+        &self,
+        library: &Library,
+        index: (usize, usize, usize),
+    ) -> TrackResult<QueueItem> {
+        C::get_context_from_list(self.get_l3((index.0, index.1)), index.2, library).await
+    }
 
-    // Get a list of items in level 2, B in the type definition
+    /// Get a list of items in level 2, B in the type definition
     pub fn get_l2(&self, item: usize) -> Vec<&'_ B> {
         let item_l1 = &self.list[item];
         match &item_l1.1 {
@@ -235,7 +254,7 @@ where
         }
     }
 
-    // Get a list of items in level 3, C in the type definition
+    /// Get a list of items in level 3, C in the type definition
     /// item is (level 1 index, level 2 index)
     pub fn get_l3(&self, item: (usize, usize)) -> Vec<&'_ C> {
         let item_l1 = &self.list[item.0];
