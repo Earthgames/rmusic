@@ -15,7 +15,7 @@ pub trait GetContext {
         library: &Library,
     ) -> impl std::future::Future<Output = TrackResult<QueueItem>> + Send;
     // get the context when this item is played from a list of items
-    fn get_context_from_list(
+    fn get_context_list(
         self_list: Vec<&Self>,
         index: usize,
         library: &Library,
@@ -36,7 +36,7 @@ impl GetContext for track::Model {
         }
     }
 
-    async fn get_context_from_list(
+    async fn get_context_list(
         self_list: Vec<&Self>,
         index: usize,
         library: &Library,
@@ -65,7 +65,7 @@ impl GetContext for track::Model {
 
 macro_rules! standerd_list_context {
     () => {
-        async fn get_context_from_list(
+        async fn get_context_list(
             self_list: Vec<&Self>,
             index: usize,
             library: &Library,

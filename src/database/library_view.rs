@@ -1,11 +1,10 @@
 use crate::queue::QueueItem;
 
-use super::context::{GetContext, TrackResult};
+use super::context::{GetContext, TrackError, TrackResult};
 use super::Library;
 use entity::{artist, release, track};
 use entity::{genre, publisher};
-use sea_orm::prelude::*;
-use sea_orm::EntityTrait;
+use sea_orm::{EntityTrait, ModelTrait, Related};
 use std::fmt::Debug;
 
 /// Hate all the traits?
@@ -222,27 +221,70 @@ where
     }
 
     /// Get the context(playable items) of an item in level 1
-    /// index is the item you want to play out of level 1
-    pub async fn get_context_l1(&self, library: &Library, index: usize) -> TrackResult<QueueItem> {
-        A::get_context_from_list(self.get_l1(), index, library).await
+    /// Should be used when the user wants to play an item from level 1
+    pub async fn get_context_list_l1(
+        &self,
+        library: &Library,
+        index: usize,
+    ) -> TrackResult<QueueItem> {
+        A::get_context_list(self.get_l1(), index, library).await
     }
     /// Get the context(playable items) of an item in level 3
+    /// Should be used when the user wants to play an item from level 2
+    /// index is (index level 1, index level 2)
+    pub async fn get_context_list_l2(
+        &self,
+        library: &Library,
+        index: (usize, usize),
+    ) -> TrackResult<QueueItem> {
+        B::get_context_list(self.get_l2(index.0), index.1, library).await
+    }
+    /// Get the context(playable items) of an item in level 3
+    /// Should be used when the user wants to play an item from level 3
+    /// index is (index level 1, index level 2, index level 3)
+    pub async fn get_context_list_l3(
+        &self,
+        library: &Library,
+        index: (usize, usize, usize),
+    ) -> TrackResult<QueueItem> {
+        C::get_context_list(self.get_l3((index.0, index.1)), index.2, library).await
+    }
+
+    /// Get the context(playable items) of an item in level 1
+    /// Should be used when the user wants to add an item from level 1 to a playlist or the queue
+    pub async fn get_context_l1(&self, library: &Library, index: usize) -> TrackResult<QueueItem> {
+        match self.get_l1().get(index) {
+            Some(item) => A::get_context(item, library).await,
+            None => Err(TrackError::WrongInput("index out of bounds".into())),
+        }
+    }
+
+    /// Get the context(playable items) of an item in level 2
+    /// Should be used when the user wants to add an item from level 2 to a playlist or the queue
     /// index is (index level 1, index level 2)
     pub async fn get_context_l2(
         &self,
         library: &Library,
         index: (usize, usize),
     ) -> TrackResult<QueueItem> {
-        B::get_context_from_list(self.get_l2(index.0), index.1, library).await
+        match self.get_l2(index.0).get(index.1) {
+            Some(item) => B::get_context(item, library).await,
+            None => Err(TrackError::WrongInput("index out of bounds".into())),
+        }
     }
-    /// Get the context(playable items) of an item in level 3
+
+    /// Get the context(playable items) of an item in level 2
+    /// Should be used when the user wants to add an item from level 2 to a playlist or the queue
     /// index is (index level 1, index level 2, index level 3)
     pub async fn get_context_l3(
         &self,
         library: &Library,
         index: (usize, usize, usize),
     ) -> TrackResult<QueueItem> {
-        C::get_context_from_list(self.get_l3((index.0, index.1)), index.2, library).await
+        match self.get_l3((index.0, index.1)).get(index.2) {
+            Some(item) => C::get_context(item, library).await,
+            None => Err(TrackError::WrongInput("index out of bounds".into())),
+        }
     }
 
     /// Get a list of items in level 2, B in the type definition
