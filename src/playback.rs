@@ -3,6 +3,7 @@ use std::fmt::Display;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, Result};
 use cpal::Sample;
@@ -15,7 +16,7 @@ use crate::queue::{Queue, QueueItem};
 
 pub struct PlaybackDaemon {
     pub playing: bool,
-    pub queue: Queue,
+    pub queue: Arc<Mutex<Queue>>,
     decoder: Decoder,
     left: u64,
     resampler: PlaybackResampler,
@@ -41,7 +42,7 @@ impl PlaybackDaemon {
     pub fn new(sample_rate_output: usize) -> PlaybackDaemon {
         PlaybackDaemon {
             playing: false,
-            queue: Queue::new(),
+            queue: Arc::new(Mutex::new(Queue::new())),
             decoder: Decoder::None,
             left: 0,
             resampler: PlaybackResampler::new(1, 1, 2).expect("should be fine"),
@@ -67,7 +68,7 @@ impl PlaybackDaemon {
 
         Some(PlaybackDaemon {
             playing: true,
-            queue: Queue::new(),
+            queue: Arc::new(Mutex::new(Queue::new())),
             decoder,
             left,
             resampler,
@@ -111,7 +112,7 @@ impl PlaybackDaemon {
             self.decoder.channels(),
         )?;
 
-        self.queue.current_track = Some(track);
+        self.queue.lock().unwrap().current_track = Some(track);
         Ok(())
     }
 
@@ -124,6 +125,10 @@ impl PlaybackDaemon {
         self.set_track(track)?;
         self.playing = true;
         Ok(())
+    }
+
+    pub fn get_arc_queue(&self) -> Arc<Mutex<Queue>> {
+        Arc::clone(&self.queue)
     }
 
     pub fn current_length(&self) -> u64 {
