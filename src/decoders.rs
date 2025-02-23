@@ -14,6 +14,16 @@ pub enum Decoder {
     None,
 }
 
+impl std::fmt::Debug for Decoder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Opus(_) => write!(f, "Opus"),
+            Self::Symphonia(_) => write!(f, "Symphonia"),
+            Self::None => write!(f, "None"),
+        }
+    }
+}
+
 impl Decoder {
     /// Returns the number of samples left in the song
     pub fn fill(&mut self, data: &mut [f32]) -> Result<u64> {
