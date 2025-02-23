@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, path::PathBuf};
+use std::{collections::VecDeque, fmt::Display, path::PathBuf};
 
 use entity::{artist, release, track, track_location};
 use log::{error, warn};
@@ -119,6 +119,7 @@ impl GetContext for artist::Model {
 
 pub type TrackResult<T, E = TrackError> = std::result::Result<T, E>;
 
+#[derive(Debug)]
 pub enum TrackError {
     /// There was no track_location for this track in the database
     NoTrackLocation,
@@ -127,6 +128,18 @@ pub enum TrackError {
     /// The database gave an error
     DbErr(migration::DbErr),
 }
+
+impl Display for TrackError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TrackError::NoTrackLocation => write!(f, "No Track Location Found"),
+            TrackError::WrongInput(str) => write!(f, "Wrong Input was given: \"{str}\""),
+            TrackError::DbErr(db_err) => write!(f, "DataBase Error: \"{db_err}\""),
+        }
+    }
+}
+
+impl std::error::Error for TrackError {}
 
 impl From<migration::DbErr> for TrackError {
     fn from(value: migration::DbErr) -> Self {
