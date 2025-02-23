@@ -3,6 +3,7 @@ use std::{collections::VecDeque, path::PathBuf};
 mod select_track;
 
 /// Struct that will play things next
+#[derive(Clone, PartialEq, Debug)]
 pub struct Queue {
     pub queue_items: VecDeque<QueueItem>,
     pub queue_options: QueueOptions,
@@ -10,7 +11,7 @@ pub struct Queue {
     pub current_track: Option<PathBuf>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum QueueItem {
     Track(PathBuf),
     PlayList(VecDeque<QueueItem>, QueueOptions),
@@ -29,7 +30,7 @@ impl QueueItem {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct QueueOptions {
     pub shuffel_type: ShuffelType,
     pub repeat: bool,
@@ -44,7 +45,7 @@ impl Default for QueueOptions {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum ShuffelType {
     None,
     TrueRandom,
