@@ -28,7 +28,7 @@ impl GetContext for track::Model {
             .model_related::<_, track_location::Entity>(self)
             .await?
         {
-            Some(location) => Ok(QueueItem::Track(PathBuf::from(location.path))),
+            Some(location) => Ok(QueueItem::Track(PathBuf::from(location.path), false)),
             None => {
                 warn!("Could not find path for {}", self.name);
                 Err(TrackError::NoTrackLocation)

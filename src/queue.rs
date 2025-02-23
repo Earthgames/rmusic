@@ -2,6 +2,8 @@ use std::{collections::VecDeque, path::PathBuf};
 
 mod select_track;
 
+pub use select_track::get_track_from_item;
+
 /// Struct that will play things next
 #[derive(Clone, PartialEq, Debug)]
 pub struct Queue {
@@ -13,19 +15,61 @@ pub struct Queue {
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum QueueItem {
-    Track(PathBuf),
+    Track(PathBuf, bool),
     PlayList(VecDeque<QueueItem>, QueueOptions),
     Album(VecDeque<PathBuf>, QueueOptions),
 }
 
 impl QueueItem {
-    fn flatten(self) -> VecDeque<PathBuf> {
+    pub fn flatten(self) -> VecDeque<PathBuf> {
         match self {
-            QueueItem::Track(track) => [track].into(),
-            QueueItem::PlayList(playlist, _) => {
-                playlist.into_iter().flat_map(|i| i.flatten()).collect()
+            QueueItem::Track(track, played) => {
+                if played {
+                    [].into()
+                } else {
+                    [track].into()
+                }
             }
-            QueueItem::Album(album, _) => album,
+            QueueItem::PlayList(mut playlist, op) => {
+                let i = if op.repeat {
+                    0
+                } else {
+                    op.selected.unwrap_or(0)
+                };
+                playlist.drain(i..).flat_map(|i| i.flatten()).collect()
+            }
+            QueueItem::Album(mut album, op) => {
+                let i = if op.repeat {
+                    0
+                } else {
+                    op.selected.unwrap_or(0)
+                };
+                album.drain(i..).collect()
+            }
+        }
+    }
+
+    /// Set QueueOptions only for this item, not the children
+    pub fn set_queue_options(self, options: QueueOptions) -> Self {
+        match self {
+            QueueItem::PlayList(vec_deque, _) => QueueItem::PlayList(vec_deque, options),
+            QueueItem::Album(vec_deque, _) => QueueItem::Album(vec_deque, options),
+            track => track,
+        }
+    }
+
+    /// Set QueueOptions for this item, and the children
+    pub fn set_queue_options_rec(self, options: QueueOptions) -> Self {
+        match self {
+            QueueItem::PlayList(vec_deque, _) => QueueItem::PlayList(
+                vec_deque
+                    .into_iter()
+                    .map(|x| x.set_queue_options_rec(options.clone()))
+                    .collect(),
+                options,
+            ),
+            QueueItem::Album(vec_deque, _) => QueueItem::Album(vec_deque, options),
+            track => track,
         }
     }
 }
@@ -34,6 +78,8 @@ impl QueueItem {
 pub struct QueueOptions {
     pub shuffel_type: ShuffelType,
     pub repeat: bool,
+    pub selected: Option<usize>,
+    pub played: usize,
 }
 
 impl Default for QueueOptions {
@@ -41,6 +87,8 @@ impl Default for QueueOptions {
         Self {
             shuffel_type: ShuffelType::None,
             repeat: false,
+            selected: None,
+            played: 0,
         }
     }
 }
@@ -58,10 +106,7 @@ pub enum ShuffelType {
 impl Queue {
     pub fn new() -> Queue {
         let queue_items = VecDeque::new();
-        let queue_options = QueueOptions {
-            shuffel_type: ShuffelType::None,
-            repeat: false,
-        };
+        let queue_options = Default::default();
         let repeat_current = false;
         Queue {
             queue_items,
@@ -76,14 +121,14 @@ impl Queue {
             return self.current_track;
         }
         self.current_track = Some(select_track::get_track_from_list(
-            self.queue_items,
-            self.queue_options,
+            &mut self.queue_items,
+            &mut self.queue_options,
         )?);
         self.current_track
     }
 
     pub fn append_track(mut self, track: PathBuf) {
-        self.queue_items.push_back(QueueItem::Track(track));
+        self.queue_items.push_back(QueueItem::Track(track, false));
     }
 
     pub fn append_playlist(mut self, playlist: Vec<QueueItem>, options: QueueOptions) {
@@ -102,7 +147,7 @@ impl Queue {
             .queue_items
             .into_iter()
             .flat_map(|i| i.flatten())
-            .map(QueueItem::Track)
+            .map(|path| QueueItem::Track(path, false))
             .collect()
     }
 }

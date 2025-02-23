@@ -7,12 +7,12 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, Result};
 use cpal::Sample;
-use log::error;
+use log::{error, warn};
 use rubato::{FftFixedInOut, Resampler};
 
 use crate::audio_conversion::{interleaved_to_planar, planar_to_interleaved};
 use crate::decoders::{opus_decoder::OpusReader, symphonia_wrap::SymphoniaWrapper, Decoder};
-use crate::queue::{Queue, QueueItem};
+use crate::queue::{get_track_from_item, Queue, QueueItem};
 
 pub struct PlaybackDaemon {
     pub playing: bool,
@@ -120,10 +120,21 @@ impl PlaybackDaemon {
         self.decoder.goto(target)
     }
 
-    pub fn play(&mut self, track: PathBuf, context: Vec<QueueItem>) -> Result<()> {
-        self.queue.queue_items = context.into();
-        self.set_track(track)?;
-        self.playing = true;
+    pub fn play(&mut self, mut item: QueueItem) -> Result<()> {
+        let mut queue = self.queue.lock().unwrap();
+        let track = get_track_from_item(&mut item);
+        if let Some(track) = track {
+            queue.queue_items = item
+                .flatten()
+                .into_iter()
+                .map(|b| QueueItem::Track(b, false))
+                .collect();
+            drop(queue);
+            self.set_track(track)?;
+            self.playing = true;
+        } else {
+            warn!("Tried to play empty queue item");
+        }
         Ok(())
     }
 
