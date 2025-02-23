@@ -3,7 +3,24 @@ use std::sync::mpsc::Receiver;
 use cpal::Sample;
 use log::error;
 
-use crate::playback::{PlaybackAction, PlaybackDaemon};
+use crate::{playback::PlaybackDaemon, queue::QueueItem};
+
+#[derive(Debug)]
+pub enum PlaybackAction {
+    Playing,
+    Paused,
+    /// Toggle between playing and paused
+    PlayPause,
+    /// Number of samples to go back
+    Rewind(u64),
+    /// Number of samples to skip
+    FastForward(u64),
+    /// Number of samples to go to in a song
+    GoTo(u64),
+    Que(QueueItem),
+    /// Play the first item of the QueueItem and set the rest as the queue
+    Play(QueueItem),
+}
 
 pub fn playback_loop(
     data: &mut [f32],

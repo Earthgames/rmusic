@@ -13,22 +13,6 @@ use crate::audio_conversion::{interleaved_to_planar, planar_to_interleaved};
 use crate::decoders::{opus_decoder::OpusReader, symphonia_wrap::SymphoniaWrapper, Decoder};
 use crate::queue::{Queue, QueueItem};
 
-#[derive(Debug)]
-pub enum PlaybackAction {
-    Playing,
-    Paused,
-    /// Toggle between playing and paused
-    PlayPause,
-    /// Number of samples to go back
-    Rewind(u64),
-    /// Number of samples to skip
-    FastForward(u64),
-    /// Number of samples to go to in a song
-    GoTo(u64),
-    Que(PathBuf),
-    Play(PathBuf),
-}
-
 pub struct PlaybackDaemon {
     pub playing: bool,
     pub queue: Queue,
