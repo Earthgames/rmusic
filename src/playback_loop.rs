@@ -20,6 +20,10 @@ pub enum PlaybackAction {
     Que(QueueItem),
     /// Play the first item of the QueueItem and set the rest as the queue
     Play(QueueItem),
+    /// Set the volume, 1.0 is default
+    SetVolume(f32),
+    /// Change the volume
+    ChangeVolume(f32),
 }
 
 pub fn playback_loop(
@@ -56,6 +60,8 @@ pub fn playback_loop(
             PlaybackAction::Play(track) => playback_daemon
                 .play(track, vec![])
                 .unwrap_or_else(|err| error!("Error in Stream: {}", err)),
+            PlaybackAction::SetVolume(vol) => playback_daemon.volume_level = vol,
+            PlaybackAction::ChangeVolume(change) => playback_daemon.volume_level += change,
             _ => unimplemented!(),
         }
     }
