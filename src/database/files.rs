@@ -10,6 +10,8 @@ use super::{
     Library,
 };
 
+pub const MEDIAEXTENSIONS: [&str; 4] = ["opus", "mp3", "flac", "wav"];
+
 impl Library {
     pub async fn add_file(&self, file: &Path) -> Result<()> {
         if !file.is_file() {
@@ -18,7 +20,7 @@ impl Library {
         let Ok(file) = file.canonicalize() else {
             bail!("Could not canonicalize path to file")
         };
-        // If we can't get the file name here we return error
+        // we don't use `display`. If we can't get the file name we return error
         info!(
             "Adding file: \"{}\"",
             file.file_name()
@@ -132,6 +134,32 @@ impl Library {
             }
         }
         info!("Successfully added file: \"{}\"", file.display());
+        Ok(())
+    }
+
+    pub async fn add_folder_rec(&self, folder: &Path) -> Result<()> {
+        // check if it is a directory
+        if !folder.is_dir() {
+            bail!("\"{}\" is not a folder", folder.display());
+        }
+        info!("Adding folder: \"{}\"", folder.display());
+
+        for item in folder.read_dir()? {
+            let item = item?.path();
+            if item.is_dir() {
+                Box::pin(self.add_folder_rec(&item)).await?;
+            } else if item.extension().is_some_and(|x| {
+                MEDIAEXTENSIONS.contains(&x.to_string_lossy().into_owned().as_str())
+            }) {
+                if let Err(err) = self.add_file(&item).await {
+                    warn!(
+                        "Error while adding file: \"{}\"\nError:{err}",
+                        item.display()
+                    )
+                }
+            }
+        }
+        info!("Successfully added folder: \"{}\"", folder.display());
         Ok(())
     }
 }
