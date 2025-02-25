@@ -1,5 +1,6 @@
 use anyhow::{bail, Result};
 use entity::{artist, genre, publisher, release, track, track_location};
+use log::info;
 use sea_orm::prelude::*;
 use sea_orm::{EntityTrait, QueryFilter, Set};
 
@@ -18,7 +19,7 @@ impl Library {
         };
         Ok(
             match publisher::Entity::find()
-                .filter(publisher::Column::Name.eq(publisher))
+                .filter(publisher::Column::Name.eq(&publisher))
                 .one(&self.database)
                 .await?
             {
@@ -27,7 +28,10 @@ impl Library {
                     .exec(&self.database)
                     .await
                 {
-                    Ok(publisher_insert) => publisher_insert.last_insert_id,
+                    Ok(publisher_insert) => {
+                        info!("Created publisher: {publisher}");
+                        publisher_insert.last_insert_id
+                    }
                     Err(err) => bail!("Could not insert publisher into database: {err}"),
                 },
             },
@@ -42,7 +46,7 @@ impl Library {
         };
         Ok(
             match artist::Entity::find()
-                .filter(artist::Column::Name.eq(artist))
+                .filter(artist::Column::Name.eq(&artist))
                 .one(&self.database)
                 .await
                 .expect("could not fetch artist")
@@ -52,7 +56,10 @@ impl Library {
                     .exec(&self.database)
                     .await
                 {
-                    Ok(artist_insert) => artist_insert.last_insert_id,
+                    Ok(artist_insert) => {
+                        info!("Created artist: {}", artist);
+                        artist_insert.last_insert_id
+                    }
                     Err(err) => bail!("Could not insert artist into database: {err}"),
                 },
             },
@@ -69,12 +76,12 @@ impl Library {
             track_id: Set(track_id),
         };
         match track_location::Entity::find()
-            .filter(track_location::Column::Path.eq(path))
+            .filter(track_location::Column::Path.eq(&path))
             .one(&self.database)
             .await?
         {
             Some(track_location) => {
-                // Update the database if there is a diffrent track_id
+                // Update the database if there is a different track_id
                 if track_location.track_id != track_id {
                     let mut track_location = <track_location::ActiveModel>::from(track_location);
                     track_location.track_id = Set(track_id);
@@ -85,7 +92,7 @@ impl Library {
                 .exec(&self.database)
                 .await
             {
-                Ok(_) => (),
+                Ok(_) => info!("Created track_location: {}", path),
                 Err(err) => bail!("Could not insert track location into database: {err}"),
             },
         };
@@ -99,7 +106,7 @@ impl Library {
             track_id: Set(track_id),
         };
         match genre::Entity::find()
-            .filter(genre::Column::Name.eq(name))
+            .filter(genre::Column::Name.eq(&name))
             .filter(genre::Column::TrackId.eq(track_id))
             .one(&self.database)
             .await?
@@ -107,7 +114,7 @@ impl Library {
             // If it is already there we don't do anything
             Some(_) => return Ok(()),
             None => match genre::Entity::insert(genre_data).exec(&self.database).await {
-                Ok(_) => (),
+                Ok(_) => info!("Created genre: {}, for tack_id: {}", name, track_id),
                 Err(err) => bail!("Could not insert track location into database: {err}"),
             },
         };
@@ -132,8 +139,8 @@ impl Library {
         };
         Ok(
             match release::Entity::find()
-                .filter(release::Column::Name.eq(name))
                 .filter(release::Column::Type.eq(r#type))
+                .filter(release::Column::Name.eq(&name))
                 .filter(release::Column::Date.eq(date))
                 .filter(release::Column::ArtistId.eq(artist_id))
                 .one(&self.database)
@@ -144,7 +151,10 @@ impl Library {
                     .exec(&self.database)
                     .await
                 {
-                    Ok(release_insert) => release_insert.last_insert_id,
+                    Ok(release_insert) => {
+                        info!("Created release: {name}");
+                        release_insert.last_insert_id
+                    }
                     Err(err) => bail!("Could not insert release into database: {err}"),
                 },
             },
@@ -171,7 +181,7 @@ impl Library {
         };
         Ok(
             match track::Entity::find()
-                .filter(track::Column::Name.eq(name))
+                .filter(track::Column::Name.eq(&name))
                 .filter(track::Column::Date.eq(date))
                 .filter(track::Column::Number.eq(number))
                 .filter(track::Column::Duration.eq(duration))
@@ -182,7 +192,10 @@ impl Library {
             {
                 Some(track) => track.id,
                 None => match track::Entity::insert(track_data).exec(&self.database).await {
-                    Ok(track_insert) => track_insert.last_insert_id,
+                    Ok(track_insert) => {
+                        info!("Created track {}", name);
+                        track_insert.last_insert_id
+                    }
                     Err(err) => bail!("Could not insert track into database: {err}"),
                 },
             },

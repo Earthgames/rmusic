@@ -1,6 +1,6 @@
 use anyhow::{anyhow, bail, Result};
 use lofty::{Accessor, ItemKey};
-use log::{info, warn};
+use log::{error, info};
 use std::path::Path;
 
 use crate::playback::match_decoder;
@@ -44,11 +44,11 @@ impl Library {
         // Release Type
         let album_type_tag = string_from_tag(&tag, &ItemKey::Unknown("RELEASETYPE".to_string()));
         if album_type_tag.is_none() {
-            warn!("Could not find release type tag");
+            info!("Could not find release type tag");
         }
         // Track Number
         let track_number = number_from_tag(&tag, &ItemKey::TrackNumber).unwrap_or_else(|err| {
-            warn!("Could not get track number from tag: {}", err);
+            info!("Could not get track number from tag: {}", err);
             1
         });
         // Track Date
@@ -63,7 +63,7 @@ impl Library {
         };
         // Album Date
         let album_date = date_from_tag(&tag, &ItemKey::ReleaseDate).unwrap_or_else(|err| {
-            warn!("Could not get album date from tag: {}", err);
+            info!("Could not get album date from tag: {}", err);
             date
         });
         // Genres
@@ -71,7 +71,7 @@ impl Library {
         // Album Artist
         let album_artist_tag = string_from_tag(&tag, &ItemKey::AlbumArtist);
         if album_artist_tag.is_none() {
-            warn!("Could not find album artist tag");
+            info!("Could not find album artist tag");
         }
 
         let Some(decoder) = match_decoder(&file) else {
@@ -98,7 +98,7 @@ impl Library {
                 .await
                 .ok()
         } else {
-            warn!("Could not find publisher tag");
+            info!("Could not find publisher tag");
             None
         };
         // Create release if needed
@@ -130,7 +130,7 @@ impl Library {
                 .await
                 .is_err()
             {
-                warn!("Could not add genre \"{}\"", genre)
+                error!("Could not add genre \"{}\"", genre)
             }
         }
         info!("Successfully added file: \"{}\"", file.display());
@@ -152,7 +152,7 @@ impl Library {
                 MEDIAEXTENSIONS.contains(&x.to_string_lossy().into_owned().as_str())
             }) {
                 if let Err(err) = self.add_file(&item).await {
-                    warn!(
+                    error!(
                         "Error while adding file: \"{}\"\nError:{err}",
                         item.display()
                     )
