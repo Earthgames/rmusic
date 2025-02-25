@@ -1,7 +1,7 @@
 use std::sync::mpsc::Receiver;
 
 use cpal::Sample;
-use log::{debug, error};
+use log::{error, info};
 
 use crate::{playback::PlaybackDaemon, queue::QueueItem};
 
@@ -33,7 +33,7 @@ pub fn playback_loop(
     rx: &Receiver<PlaybackAction>,
 ) {
     if let Ok(status) = rx.try_recv() {
-        debug!(target: "playback_loop", "Received: {:?}", status);
+        info!(target: "playback_loop", "Received: {:?}", status);
         match status {
             PlaybackAction::Playing => playback_daemon.playing = true,
             PlaybackAction::Paused => playback_daemon.playing = false,
