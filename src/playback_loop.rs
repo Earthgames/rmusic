@@ -33,7 +33,7 @@ pub fn playback_loop(
     rx: &Receiver<PlaybackAction>,
 ) {
     if let Ok(status) = rx.try_recv() {
-        info!(target: "playback_loop", "Received: {:?}", status);
+        info!(target: "rmusic::playback_loop", "Received: {:?}", status);
         match status {
             PlaybackAction::Playing => playback_daemon.playing = true,
             PlaybackAction::Paused => playback_daemon.playing = false,

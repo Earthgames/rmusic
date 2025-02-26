@@ -27,6 +27,7 @@ pub mod library_view;
 pub mod select;
 
 /// Main db struct
+#[derive(Clone, Debug)]
 pub struct Library {
     database: DatabaseConnection,
 }
