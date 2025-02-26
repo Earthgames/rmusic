@@ -139,8 +139,11 @@ impl Library {
         };
         Ok(
             match release::Entity::find()
-                .filter(release::Column::Type.eq(r#type))
                 .filter(release::Column::Name.eq(&name))
+                .filter(match r#type {
+                    Some(release_type) => release::Column::Type.eq(release_type),
+                    None => release::Column::Type.is_null(),
+                })
                 .filter(release::Column::Date.eq(date))
                 .filter(release::Column::ArtistId.eq(artist_id))
                 .one(&self.database)
