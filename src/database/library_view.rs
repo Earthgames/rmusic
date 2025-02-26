@@ -85,7 +85,7 @@ where
 
     async fn get_l2(&self, library: &Library) -> Result<Vec<B>> {
         library
-            .model_related(self)
+            .models_related(self)
             .await
             .map(|x| x.into_iter().map(|z| IntoFR::into(z)).collect())
     }
@@ -100,7 +100,7 @@ where
 {
     async fn get_l3(&self, library: &Library) -> Result<std::vec::Vec<B>, migration::DbErr> {
         library
-            .model_related::<_, B::Entity>(self)
+            .models_related::<_, B::Entity>(self)
             .await
             .map(|x| x.into_iter().map(|z| IntoFR::into(z)).collect())
     }
