@@ -1,6 +1,7 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use entity::{artist, genre, publisher, release, track, track_location};
-use log::info;
+use log::{debug, info};
+use migration::OnConflict;
 use sea_orm::prelude::*;
 use sea_orm::{EntityTrait, QueryFilter, Set};
 
@@ -18,22 +19,29 @@ impl Library {
             about: Set(about),
         };
         Ok(
-            match publisher::Entity::find()
-                .filter(publisher::Column::Name.eq(&publisher))
-                .one(&self.database)
-                .await?
+            match publisher::Entity::insert(publisher_data)
+                .on_conflict_do_nothing()
+                .exec(&self.database)
+                .await
             {
-                Some(publisher) => publisher.id,
-                None => match publisher::Entity::insert(publisher_data)
-                    .exec(&self.database)
-                    .await
-                {
-                    Ok(publisher_insert) => {
-                        info!("Created publisher: {publisher}");
-                        publisher_insert.last_insert_id
+                Ok(sea_orm::TryInsertResult::Inserted(publisher_insert)) => {
+                    info!("Created publisher: {publisher}");
+                    publisher_insert.last_insert_id
+                }
+                Ok(_) | Err(DbErr::Exec(_)) => {
+                    match publisher::Entity::find()
+                        .filter(publisher::Column::Name.eq(&publisher))
+                        .one(&self.database)
+                        .await
+                        .context("While finding publisher")?
+                    {
+                        Some(publisher) => publisher.id,
+                        None => bail!(
+                            "Could not find publisher ({publisher}) after trying to insert it"
+                        ),
                     }
-                    Err(err) => bail!("Could not insert publisher into database: {err}"),
-                },
+                }
+                Err(err) => return Err(err).context("While inserting publisher"),
             },
         )
     }
@@ -45,23 +53,27 @@ impl Library {
             about: Set(about),
         };
         Ok(
-            match artist::Entity::find()
-                .filter(artist::Column::Name.eq(&artist))
-                .one(&self.database)
+            match artist::Entity::insert(artist_data)
+                .on_conflict_do_nothing()
+                .exec(&self.database)
                 .await
-                .expect("could not fetch artist")
             {
-                Some(artist) => artist.id,
-                None => match artist::Entity::insert(artist_data)
-                    .exec(&self.database)
-                    .await
-                {
-                    Ok(artist_insert) => {
-                        info!("Created artist: {}", artist);
-                        artist_insert.last_insert_id
+                Ok(sea_orm::TryInsertResult::Inserted(artist_insert)) => {
+                    info!("Created artist: {}", artist);
+                    artist_insert.last_insert_id
+                }
+                Ok(_) | Err(DbErr::Exec(_)) => {
+                    match artist::Entity::find()
+                        .filter(artist::Column::Name.eq(&artist))
+                        .one(&self.database)
+                        .await
+                        .context("While finding artist")?
+                    {
+                        Some(artist) => artist.id,
+                        None => bail!("Could not find artist ({artist}) after trying to insert it"),
                     }
-                    Err(err) => bail!("Could not insert artist into database: {err}"),
-                },
+                }
+                Err(err) => return Err(err).context("While inserting artist"),
             },
         )
     }
@@ -75,27 +87,17 @@ impl Library {
             path: Set(path.clone()),
             track_id: Set(track_id),
         };
-        match track_location::Entity::find()
-            .filter(track_location::Column::Path.eq(&path))
-            .one(&self.database)
-            .await?
-        {
-            Some(track_location) => {
-                // Update the database if there is a different track_id
-                if track_location.track_id != track_id {
-                    let mut track_location = <track_location::ActiveModel>::from(track_location);
-                    track_location.track_id = Set(track_id);
-                    track_location.update(&self.database).await?;
-                }
-            }
-            None => match track_location::Entity::insert(track_location_data)
-                .exec(&self.database)
-                .await
-            {
-                Ok(_) => info!("Created track_location: {}", path),
-                Err(err) => bail!("Could not insert track location into database: {err}"),
-            },
-        };
+        track_location::Entity::insert(track_location_data)
+            .on_conflict(
+                OnConflict::column(track_location::Column::TrackId)
+                    .update_column(track_location::Column::TrackId)
+                    .to_owned(),
+            )
+            .do_nothing()
+            .exec(&self.database)
+            .await
+            .context("While inserting track_location")?;
+        info!("Created or updated track_location: {}", path);
         Ok(())
     }
 
@@ -105,19 +107,18 @@ impl Library {
             name: Set(name.clone()),
             track_id: Set(track_id),
         };
-        match genre::Entity::find()
-            .filter(genre::Column::Name.eq(&name))
-            .filter(genre::Column::TrackId.eq(track_id))
-            .one(&self.database)
-            .await?
+        match genre::Entity::insert(genre_data)
+            .do_nothing()
+            .exec(&self.database)
+            .await
+            .context("While inserting genre")?
         {
-            // If it is already there we don't do anything
-            Some(_) => return Ok(()),
-            None => match genre::Entity::insert(genre_data).exec(&self.database).await {
-                Ok(_) => info!("Created genre: {}, for tack_id: {}", name, track_id),
-                Err(err) => bail!("Could not insert track location into database: {err}"),
-            },
-        };
+            sea_orm::TryInsertResult::Empty => (),
+            sea_orm::TryInsertResult::Conflicted => debug!("Genre already existed for this track"),
+            sea_orm::TryInsertResult::Inserted(_) => {
+                info!("Created genre: {}, for tack_id: {}", name, track_id)
+            }
+        }
         Ok(())
     }
 
@@ -138,28 +139,34 @@ impl Library {
             publisher_id: Set(publisher_id),
         };
         Ok(
-            match release::Entity::find()
-                .filter(release::Column::Name.eq(&name))
-                .filter(match r#type {
-                    Some(release_type) => release::Column::Type.eq(release_type),
-                    None => release::Column::Type.is_null(),
-                })
-                .filter(release::Column::Date.eq(date))
-                .filter(release::Column::ArtistId.eq(artist_id))
-                .one(&self.database)
-                .await?
+            match release::Entity::insert(release_data)
+                .on_conflict_do_nothing()
+                .exec(&self.database)
+                .await
             {
-                Some(release) => release.id,
-                None => match release::Entity::insert(release_data)
-                    .exec(&self.database)
-                    .await
-                {
-                    Ok(release_insert) => {
-                        info!("Created release: {name}");
-                        release_insert.last_insert_id
+                Ok(sea_orm::TryInsertResult::Inserted(release_insert)) => {
+                    info!("Created release: {name}");
+                    release_insert.last_insert_id
+                }
+                Ok(_) | Err(DbErr::Exec(_)) => {
+                    match release::Entity::find()
+                        .filter(release::Column::Name.eq(&name))
+                        .filter(match r#type {
+                            Some(release_type) => release::Column::Type.eq(release_type),
+                            None => release::Column::Type.is_null(),
+                        })
+                        .filter(release::Column::Date.eq(date))
+                        .filter(release::Column::ArtistId.eq(artist_id))
+                        .one(&self.database)
+                        .await?
+                    {
+                        Some(release) => release.id,
+                        None => {
+                            bail!("Could not find release ({name}) after trying to insert it")
+                        }
                     }
-                    Err(err) => bail!("Could not insert release into database: {err}"),
-                },
+                }
+                Err(err) => bail!("Could not insert release into database: {err}"),
             },
         )
     }
@@ -183,24 +190,31 @@ impl Library {
             ..Default::default()
         };
         Ok(
-            match track::Entity::find()
-                .filter(track::Column::Name.eq(&name))
-                .filter(track::Column::Date.eq(date))
-                .filter(track::Column::Number.eq(number))
-                .filter(track::Column::Duration.eq(duration))
-                .filter(track::Column::ArtistId.eq(artist_id))
-                .filter(track::Column::ReleaseId.eq(release_id))
-                .one(&self.database)
-                .await?
+            match track::Entity::insert(track_data)
+                .on_conflict_do_nothing()
+                .exec(&self.database)
+                .await
             {
-                Some(track) => track.id,
-                None => match track::Entity::insert(track_data).exec(&self.database).await {
-                    Ok(track_insert) => {
-                        info!("Created track {}", name);
-                        track_insert.last_insert_id
+                Ok(sea_orm::TryInsertResult::Inserted(track_insert)) => {
+                    info!("Created track {}", name);
+                    track_insert.last_insert_id
+                }
+                Ok(_) | Err(DbErr::Exec(_)) => {
+                    match track::Entity::find()
+                        .filter(track::Column::Name.eq(&name))
+                        .filter(track::Column::Date.eq(date))
+                        .filter(track::Column::Number.eq(number))
+                        .filter(track::Column::Duration.eq(duration))
+                        .filter(track::Column::ArtistId.eq(artist_id))
+                        .filter(track::Column::ReleaseId.eq(release_id))
+                        .one(&self.database)
+                        .await?
+                    {
+                        Some(track) => track.id,
+                        None => bail!("Could not find track ({name}) after trying to insert it"),
                     }
-                    Err(err) => bail!("Could not insert track into database: {err}"),
-                },
+                }
+                Err(err) => return Err(err).context("While inserting track"),
             },
         )
     }
