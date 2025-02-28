@@ -1,12 +1,14 @@
 use anyhow::{bail, Result};
 #[cfg(not(debug_assertions))]
-use directories;
+use directories::{self, ProjectDirs};
 use lofty::read_from_path;
 use lofty::ItemKey;
 use lofty::Tag;
 use lofty::TaggedFileExt;
 use migration::MigratorTrait;
 use sea_orm::{prelude::*, ConnectOptions, Database};
+#[cfg(not(debug_assertions))]
+use std::fs;
 use std::path::Path;
 
 pub use entity::*;
@@ -37,15 +39,23 @@ impl Library {
         #[cfg(debug_assertions)]
         let database_path = "sqlite:./main.sqlite?mode=rwc";
         #[cfg(not(debug_assertions))]
-        {
-            let dir = directories::ProjectDirs::from("", "Earthgame_s", "rmusic")
-                .unwrap_or(bail!("Can't get directories"));
-            let db_path = format!(
-                "sqlite:{}/main.sqlite?mode=rwc",
-                directories::ProjectDirs::data_dir(&dir).display()
-            );
+        let dir = match ProjectDirs::from("", "Earthgame_s", "rmusic") {
+            Some(dir) => dir,
+            None => bail!("Can't get directories"),
+        };
+        #[cfg(not(debug_assertions))]
+        let database_path = format!(
+            "sqlite:{}/main.sqlite?mode=rwc",
+            directories::ProjectDirs::data_dir(&dir).display()
+        );
+        #[cfg(not(debug_assertions))]
+        if let Err(err) = fs::create_dir_all(directories::ProjectDirs::data_dir(&dir)) {
+            match err.kind() {
+                std::io::ErrorKind::AlreadyExists => (),
+                _ => bail!("Could not create path"),
+            }
         }
-
+        println!("{}", database_path);
         let mut database_options = ConnectOptions::new(database_path);
         database_options
             .sqlx_logging(true)
