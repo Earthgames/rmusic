@@ -7,6 +7,7 @@ use entity::{genre, publisher};
 use log::info;
 use sea_orm::{EntityTrait, ModelTrait, Related};
 use std::fmt::Debug;
+use tokio::time::Instant;
 
 /// Hate all the traits?
 /// Me to, if you find a solution please let me know
@@ -211,11 +212,11 @@ where
     }
 
     pub async fn sync_with_database_all(&mut self, library: &Library) -> Result<()> {
-        info!(target: "rmusic::speed", "Sync with db start");
+        let now = Instant::now();
         self.sync_with_database_l1(library).await?;
         self.sync_with_database_l2(library).await?;
         self.sync_with_database_l3(library).await?;
-        info!(target: "rmusic::speed", "Sync with db end");
+        info!(target: "rmusic::speed", "Sync with db took {} sec", now.elapsed().as_secs());
         Ok(())
     }
 

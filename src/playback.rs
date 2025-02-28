@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
@@ -249,12 +249,12 @@ pub fn match_decoder(file: &Path) -> Option<Decoder> {
     }
 }
 
-impl<T, E: Display> PrintErrOk<T, E> for std::result::Result<T, E> {
+impl<T, E: Debug> PrintErrOk<T, E> for std::result::Result<T, E> {
     fn print_err_ok(self) -> Option<T> {
         match self {
             Ok(t) => Some(t),
             Err(err) => {
-                error!("{}", err);
+                error!("{:?}", err);
                 None
             }
         }
