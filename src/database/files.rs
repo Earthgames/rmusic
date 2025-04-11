@@ -6,7 +6,7 @@ use sea_orm::{entity::ColumnTrait, prelude::Date, ActiveValue, EntityTrait, Quer
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{atomic::AtomicU8, Arc},
     time::Instant,
 };
 
@@ -201,13 +201,13 @@ impl Library {
         Ok(())
     }
 
-    pub async fn add_folder_rec(&self, folder: &Path, per_done: Arc<Mutex<u8>>) -> Result<()> {
+    pub async fn add_folder_rec(&self, folder: &Path, per_done: &Arc<AtomicU8>) -> Result<()> {
         // check if it is a directory
         if !folder.is_dir() {
             bail!("\"{}\" is not a folder", folder.display());
         }
         info!("Adding folder: \"{}\"", folder.display());
-        *per_done.lock().unwrap() = 0;
+        per_done.store(0, std::sync::atomic::Ordering::Relaxed);
         let now = Instant::now();
         // takes no time at all
         let files = Self::find_files(folder)?;
@@ -247,7 +247,7 @@ impl Library {
             let progress_amount = ((i + 1) / total) as u8 / 10;
             if progress_amount > progress {
                 progress = progress_amount;
-                *per_done.lock().unwrap() = progress_amount;
+                per_done.store(progress_amount, std::sync::atomic::Ordering::Relaxed);
             }
         }
 
@@ -334,14 +334,14 @@ impl Library {
             let progress_amount = ((i + 1) / total) as u8 / 89 + 10;
             if progress_amount > progress {
                 progress = progress_amount;
-                *per_done.lock().unwrap() = progress_amount;
+                per_done.store(progress_amount, std::sync::atomic::Ordering::Relaxed);
             }
         }
         // insert tracks_locations
         track_location::Entity::insert_many(track_locations)
             .exec(&self.database)
             .await?;
-        *per_done.lock().unwrap() = 100;
+        per_done.store(100, std::sync::atomic::Ordering::Relaxed);
 
         info!(target: "rmusic::speed", "Addin files took {} sec", now.elapsed().as_secs());
         info!("Successfully added folder: \"{}\"", folder.display());
