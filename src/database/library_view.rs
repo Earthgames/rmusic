@@ -49,7 +49,7 @@ macro_rules! impl_bs {
 
 impl_bs!(artist, release, track, publisher, genre);
 
-pub trait L1<A, B>: Sized + Sync + Debug + GetContext
+pub trait L1<A, B>: Sized + Sync + Debug + GetContext + Clone
 where
     A: L2<B>,
     B: L3,
@@ -59,7 +59,7 @@ where
         -> impl std::future::Future<Output = Result<Vec<A>>> + Send;
 }
 
-pub trait L2<A>: Debug + GetContext
+pub trait L2<A>: Debug + GetContext + Clone
 where
     A: L3,
 {
@@ -67,7 +67,7 @@ where
         -> impl std::future::Future<Output = Result<Vec<A>>> + Send;
 }
 
-pub trait L3: ModelTrait + Debug + GetContext {}
+pub trait L3: ModelTrait + Debug + GetContext + Clone {}
 
 impl<A, B, C> L1<B, C> for A
 where
@@ -216,6 +216,15 @@ where
         self.sync_with_database_l1(library).await?;
         self.sync_with_database_l2(library).await?;
         self.sync_with_database_l3(library).await?;
+        let mut new_list = vec![];
+        for item in &self.list {
+            if let Some(list) = &item.1 {
+                if !list.is_empty() {
+                    new_list.push(item.clone());
+                }
+            }
+        }
+        self.list = new_list;
         info!(target: "rmusic::speed", "Sync with db took {} sec", now.elapsed().as_secs());
         Ok(())
     }
