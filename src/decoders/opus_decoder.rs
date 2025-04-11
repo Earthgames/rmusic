@@ -1,3 +1,4 @@
+use opusic_c::{Channels, Decoder, SampleRate};
 use std::collections::VecDeque;
 use std::error::Error;
 use std::fmt;
@@ -5,10 +6,9 @@ use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io::BufReader;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use byteorder::{ByteOrder, LittleEndian};
 use cpal::Sample;
-use magnum_opus::{Channels, Decoder};
 
 use crate::decoders::ogg_demuxer::OggReader;
 
@@ -93,7 +93,7 @@ pub struct OpusReader {
     decoder: Decoder,
     pub opus_header: OpusHeader,
     buffer: VecDeque<f32>,
-    package_size: u16,
+    package_size: usize,
     pos: u32,
     /// Length in samples
     pub length: u64,
@@ -108,7 +108,7 @@ impl OpusReader {
         let mut ogg_reader = OggReader::try_new(file)?;
 
         // Get the first package and turn it into a header
-        let opus_header = OpusHeader::new(&ogg_reader.read_packet()?.0)?;
+        let opus_header = OpusHeader::new(ogg_reader.read_packet()?.0)?;
         // Check if there is a comment stream and skip it
         let comment_packet = ogg_reader.read_packet()?.0;
         if !comment_packet.starts_with(b"OpusTags") {
@@ -133,23 +133,33 @@ impl OpusReader {
         };
 
         // Setup decoder
-        let mut decoder = Decoder::new(48000, channels)?;
-        decoder.set_gain(opus_header.output_gain as i32)?;
+        let mut decoder = match Decoder::new(channels, SampleRate::Hz48000) {
+            Ok(it) => it,
+            Err(err) => return Err(anyhow!(err.message())),
+        };
+        match decoder.set_gain(opus_header.output_gain as i32) {
+            Ok(it) => it,
+            Err(err) => return Err(anyhow!(err.message())),
+        };
 
         let mut pos = 0;
 
         // Create buffer and fill with first decoder output
         let mut buffer = Vec::new();
         let packet = ogg_reader.read_packet()?.0;
-        let package_size = decoder.get_nb_samples(&packet)? as u16;
-        let mut samples = vec![0f32; (package_size * opus_header.channels as u16) as usize];
-        decoder.decode_float(&packet, &mut samples, false)?;
+        let package_size = decoder.get_nb_samples(packet).to_err()?;
+        let mut samples = vec![0f32; package_size * opus_header.channels as usize];
+        decoder
+            .decode_float_to_vec(packet, &mut samples, package_size, false)
+            .to_err()?;
         buffer.extend(samples.iter());
         pos += 1;
         // remove the pre-skip from the buffer
         while buffer.len() < opus_header.pre_skip as usize {
             let packet = &ogg_reader.read_packet()?.0;
-            decoder.decode_float(packet, &mut samples, false)?;
+            decoder
+                .decode_float_to_vec(packet, &mut samples, package_size, false)
+                .to_err()?;
             buffer.extend(samples.iter());
         }
         buffer.drain(0..opus_header.pre_skip as usize);
@@ -174,7 +184,8 @@ impl OpusReader {
         self.pos += 1;
 
         self.decoder
-            .decode_float(&packet.0, &mut self.samples, false)?;
+            .decode_float_to_vec(packet.0, &mut self.samples, self.package_size, false)
+            .to_err()?;
 
         if packet.1
         // Are we in the last page?
@@ -184,11 +195,8 @@ impl OpusReader {
             self.finished = true;
             self.left = last;
             // Remove samples that are not part of the song
-            self.buffer.extend(
-                self.samples
-                    [self.package_size as usize - last as usize..self.package_size as usize]
-                    .iter(),
-            );
+            self.buffer
+                .extend(self.samples[self.package_size - last as usize..self.package_size].iter());
         } else {
             self.left -= self.package_size as u64;
             self.buffer.extend(self.samples.iter());
@@ -232,5 +240,18 @@ impl OpusReader {
             *i = self.buffer.pop_front().unwrap_or(Sample::EQUILIBRIUM)
         }
         Ok(self.left)
+    }
+}
+
+trait ToErr<T>
+where
+    Self: std::marker::Sized,
+{
+    fn to_err(self) -> anyhow::Result<T>;
+}
+
+impl<T> ToErr<T> for std::result::Result<T, opusic_c::ErrorCode> {
+    fn to_err(self) -> anyhow::Result<T> {
+        self.map_err(|err| anyhow!(err.message()))
     }
 }

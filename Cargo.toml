@@ -19,7 +19,7 @@ clap = { version = "4.0", features = [
 ] } # command line interface
 simplelog = "0.12" # logging
 log = "0.4" # logging
-magnum-opus = "0.3" # opus but magnum
+opusic-c = "1.5.2"#
 cpal = "0.15" # music output
 byteorder = "1.5" # Read bytes
 symphonia = { version =  "0.5", features = ["all"] } # Most formats
