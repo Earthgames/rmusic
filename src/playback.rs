@@ -1,8 +1,9 @@
 use std::collections::VecDeque;
-use std::fmt::{Debug, Display};
+use std::fmt::Debug;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, Result};
@@ -18,7 +19,7 @@ pub struct PlaybackDaemon {
     pub playing: bool,
     pub queue: Arc<Mutex<Queue>>,
     decoder: Decoder,
-    left: u64,
+    left: Arc<AtomicU64>,
     resampler: PlaybackResampler,
     buffer_output: VecDeque<f32>,
     pub volume_level: f32,
@@ -44,7 +45,7 @@ impl PlaybackDaemon {
             playing: false,
             queue: Arc::new(Mutex::new(Queue::new())),
             decoder: Decoder::None,
-            left: 0,
+            left: Arc::new(AtomicU64::new(0)),
             resampler: PlaybackResampler::new(1, 1, 2).expect("should be fine"),
             buffer_output: VecDeque::new(),
             volume_level: 0.0,
@@ -59,7 +60,7 @@ impl PlaybackDaemon {
     ) -> Option<PlaybackDaemon> {
         let current = PathBuf::from(file);
         let decoder = match_decoder(&current)?;
-        let left = decoder.length();
+        let left = Arc::new(AtomicU64::new(decoder.length()));
         let resampler = PlaybackResampler::new(
             decoder.sample_rate(),
             sample_rate_output,
@@ -94,7 +95,10 @@ impl PlaybackDaemon {
 
     // add to internal buffer
     fn add_buffer(&mut self) -> Result<()> {
-        self.left = self.decoder.fill(&mut self.resampler.decoder_output)?;
+        self.left.store(
+            self.decoder.fill(&mut self.resampler.decoder_output)?,
+            Ordering::Relaxed,
+        );
 
         self.resampler.resample(self.decoder.channels())?;
 
@@ -105,7 +109,7 @@ impl PlaybackDaemon {
     // set up a track to be decoded
     fn set_track(&mut self, track: PathBuf) -> Result<()> {
         self.decoder = match_decoder(&track).ok_or(anyhow!("Could not match decoder"))?;
-        self.left = self.decoder.length();
+        self.left.store(self.decoder.length(), Ordering::Relaxed);
         self.resampler.change_sample_rate(
             self.decoder.sample_rate(),
             self.sample_rate_output,
@@ -151,7 +155,10 @@ impl PlaybackDaemon {
     }
 
     pub fn left(&self) -> u64 {
-        self.left
+        self.left.load(Ordering::Relaxed)
+    }
+    pub fn atomic_left(&self) -> Arc<AtomicU64> {
+        self.left.clone()
     }
 }
 
