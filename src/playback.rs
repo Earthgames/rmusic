@@ -3,8 +3,6 @@ use std::fmt::Debug;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, Result};
 use cpal::Sample;
@@ -13,13 +11,15 @@ use rubato::{FftFixedInOut, Resampler};
 
 use crate::audio_conversion::{interleaved_to_planar, planar_to_interleaved};
 use crate::decoders::{opus_decoder::OpusReader, symphonia_wrap::SymphoniaWrapper, Decoder};
-use crate::queue::{get_track_from_item, Queue, QueueItem};
+use crate::queue::{get_track_from_item, QueueItem};
+use playback_context::{ArcPlaybackContext, PlaybackContext};
+
+pub mod playback_context;
 
 pub struct PlaybackDaemon {
     pub playing: bool,
-    pub queue: Arc<Mutex<Queue>>,
+    playback_context: ArcPlaybackContext,
     decoder: Decoder,
-    left: Arc<AtomicU64>,
     resampler: PlaybackResampler,
     buffer_output: VecDeque<f32>,
     pub volume_level: f32,
@@ -43,9 +43,8 @@ impl PlaybackDaemon {
     pub fn new(sample_rate_output: usize) -> PlaybackDaemon {
         PlaybackDaemon {
             playing: false,
-            queue: Arc::new(Mutex::new(Queue::new())),
             decoder: Decoder::None,
-            left: Arc::new(AtomicU64::new(0)),
+            playback_context: PlaybackContext::new(),
             resampler: PlaybackResampler::new(1, 1, 2).expect("should be fine"),
             buffer_output: VecDeque::new(),
             volume_level: 0.0,
@@ -60,18 +59,18 @@ impl PlaybackDaemon {
     ) -> Option<PlaybackDaemon> {
         let current = PathBuf::from(file);
         let decoder = match_decoder(&current)?;
-        let left = Arc::new(AtomicU64::new(decoder.length()));
         let resampler = PlaybackResampler::new(
             decoder.sample_rate(),
             sample_rate_output,
             decoder.channels(),
         )?;
+        let playback_context =
+            PlaybackContext::new_from(decoder.length(), current, decoder.sample_rate());
 
         Some(PlaybackDaemon {
             playing: true,
-            queue: Arc::new(Mutex::new(Queue::new())),
             decoder,
-            left,
+            playback_context,
             resampler,
             buffer_output: VecDeque::new(),
             volume_level,
@@ -95,10 +94,8 @@ impl PlaybackDaemon {
 
     // add to internal buffer
     fn add_buffer(&mut self) -> Result<()> {
-        self.left.store(
-            self.decoder.fill(&mut self.resampler.decoder_output)?,
-            Ordering::Relaxed,
-        );
+        self.playback_context
+            .update_left(self.decoder.fill(&mut self.resampler.decoder_output)?);
 
         self.resampler.resample(self.decoder.channels())?;
 
@@ -109,14 +106,15 @@ impl PlaybackDaemon {
     // set up a track to be decoded
     fn set_track(&mut self, track: PathBuf) -> Result<()> {
         self.decoder = match_decoder(&track).ok_or(anyhow!("Could not match decoder"))?;
-        self.left.store(self.decoder.length(), Ordering::Relaxed);
+        self.playback_context.update_left(self.decoder.length());
         self.resampler.change_sample_rate(
             self.decoder.sample_rate(),
             self.sample_rate_output,
             self.decoder.channels(),
         )?;
 
-        self.queue.lock().unwrap().current_track = Some(track);
+        self.playback_context
+            .set_track(track, self.decoder.length(), self.decoder.sample_rate());
         Ok(())
     }
 
@@ -125,7 +123,7 @@ impl PlaybackDaemon {
     }
 
     pub fn play(&mut self, mut item: QueueItem) -> Result<()> {
-        let mut queue = self.queue.lock().unwrap();
+        let mut queue = self.playback_context.lock_queue();
         let track = get_track_from_item(&mut item);
         if let Some(track) = track {
             queue.queue_items = item
@@ -133,6 +131,7 @@ impl PlaybackDaemon {
                 .into_iter()
                 .map(|b| QueueItem::Track(b, false))
                 .collect();
+            // Dispose of mutex guard
             drop(queue);
             self.set_track(track)?;
             self.playing = true;
@@ -140,10 +139,6 @@ impl PlaybackDaemon {
             warn!("Tried to play empty queue item");
         }
         Ok(())
-    }
-
-    pub fn get_arc_queue(&self) -> Arc<Mutex<Queue>> {
-        Arc::clone(&self.queue)
     }
 
     pub fn current_length(&self) -> u64 {
@@ -155,10 +150,11 @@ impl PlaybackDaemon {
     }
 
     pub fn left(&self) -> u64 {
-        self.left.load(Ordering::Relaxed)
+        self.playback_context.left()
     }
-    pub fn atomic_left(&self) -> Arc<AtomicU64> {
-        self.left.clone()
+
+    pub fn get_playback_context(&self) -> ArcPlaybackContext {
+        self.playback_context.clone()
     }
 }
 

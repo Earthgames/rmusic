@@ -116,6 +116,7 @@ impl Queue {
         }
     }
 
+    //TODO: make sure this is sound
     pub fn next_track(mut self) -> Option<PathBuf> {
         if self.repeat_current {
             return self.current_track;
