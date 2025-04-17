@@ -13,13 +13,7 @@ use tokio::time::Instant;
 /// Me to, if you find a solution please let me know
 ///
 /// Please read https://stackoverflow.com/questions/68728105/how-can-i-generate-trait-bounds-in-a-declarative-macro
-/// or use
-/// ```rust
-/// where
-///     A: L1<B, C>,
-///     B: L2<C>,
-///     C: L3,
-/// ```
+///
 pub struct LibraryView<A, B, C>
 where
     A: L1<B, C>,
