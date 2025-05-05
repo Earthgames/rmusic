@@ -46,19 +46,23 @@ pub fn playback_loop(
             PlaybackAction::FastForward(amount) => {
                 let current = playback_daemon.current_length() - playback_daemon.left();
                 let target = current + amount * playback_daemon.sample_rate_input() as u64;
-                if target <= playback_daemon.current_length() {
-                    playback_daemon
-                        .goto(target)
-                        .unwrap_or_else(|err| error!("Error in Stream: {}", err))
-                }
+                let goto = if target <= playback_daemon.current_length() {
+                    target
+                } else {
+                    //TODO: replace with next track
+                    playback_daemon.current_length()
+                };
+                playback_daemon
+                    .goto(goto)
+                    .unwrap_or_else(|err| error!("Error in Stream: {}", err))
             }
             PlaybackAction::Rewind(amount) => {
                 let current = playback_daemon.current_length() - playback_daemon.left();
-                if amount <= current {
-                    playback_daemon
-                        .goto(current - amount * playback_daemon.sample_rate_input() as u64)
-                        .unwrap_or_else(|err| error!("Error in Stream: {}", err))
-                }
+                let amount = amount * playback_daemon.sample_rate_input() as u64;
+                let goto = current.saturating_sub(amount);
+                playback_daemon
+                    .goto(goto)
+                    .unwrap_or_else(|err| error!("Error in Stream: {}", err))
             }
             PlaybackAction::Play(item) => playback_daemon
                 .play(item)
