@@ -95,12 +95,22 @@ impl PlaybackDaemon {
 
     // add to internal buffer
     fn add_buffer(&mut self) -> Result<()> {
-        self.playback_context
-            .update_left(self.decoder.fill(&mut self.resampler.decoder_output)?);
+        let left = self.decoder.fill(&mut self.resampler.decoder_output)?;
+        self.playback_context.update_left(left);
 
         self.resampler.resample(self.decoder.channels())?;
 
         self.buffer_output.extend(self.resampler.interleaved.iter());
+        if self.decoder.finished() {
+            let mut queue = self.playback_context.lock_queue();
+            let track = queue.next_track();
+            drop(queue);
+            if let Some(track) = track {
+                self.set_track(track)?;
+            } else {
+                self.playing = false;
+            }
+        }
         Ok(())
     }
 

@@ -169,19 +169,18 @@ impl Queue {
         }
     }
 
-    //TODO: make sure this is sound
-    pub fn next_track(mut self) -> Option<PathBuf> {
+    ///TODO: make sure all shuffel types work
+    pub fn next_track(&mut self) -> Option<PathBuf> {
         if self.repeat_current && self.current_track.is_some() {
-            return self.current_track;
+            return self.current_track.clone();
         }
-        let mut options = self.queue_options;
+        let options = &mut self.queue_options;
 
-        if let Some(track) = self.current_track {
+        if let Some(track) = self.current_track.clone() {
             self.played_items.push_front(track);
         }
-        self.current_track =
-            get_track_from_list(&mut self.queue_items, &mut options, &mut thread_rng());
-        self.current_track
+        self.current_track = get_track_from_list(&mut self.queue_items, options, &mut thread_rng());
+        self.current_track.clone()
     }
 
     pub fn queue_items(&self) -> &VecDeque<QueueItem> {
