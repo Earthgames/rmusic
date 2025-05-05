@@ -149,8 +149,9 @@ impl OpusReader {
         let packet = ogg_reader.read_packet()?.0;
         let package_size = decoder.get_nb_samples(packet).to_err()?;
         let mut samples = vec![0f32; package_size * opus_header.channels as usize];
+
         decoder
-            .decode_float_to_vec(packet, &mut samples, package_size, false)
+            .decode_float_to_slice(packet, &mut samples, false)
             .to_err()?;
         buffer.extend(samples.iter());
         pos += 1;
@@ -158,7 +159,7 @@ impl OpusReader {
         while buffer.len() < opus_header.pre_skip as usize {
             let packet = &ogg_reader.read_packet()?.0;
             decoder
-                .decode_float_to_vec(packet, &mut samples, package_size, false)
+                .decode_float_to_slice(packet, &mut samples, false)
                 .to_err()?;
             buffer.extend(samples.iter());
         }
@@ -184,7 +185,7 @@ impl OpusReader {
         self.pos += 1;
 
         self.decoder
-            .decode_float_to_vec(packet.0, &mut self.samples, self.package_size, false)
+            .decode_float_to_slice(packet.0, &mut self.samples, false)
             .to_err()?;
 
         if packet.1
