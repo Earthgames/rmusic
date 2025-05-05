@@ -11,11 +11,13 @@ pub enum PlaybackAction {
     Paused,
     /// Toggle between playing and paused
     PlayPause,
-    /// Number of samples to go back
+    //TODO: think about if using seconds is the right move
+    //
+    /// Number of seconds to go back
     Rewind(u64),
-    /// Number of samples to skip
+    /// Number of seconds to skip
     FastForward(u64),
-    /// Number of samples to go to in a song
+    /// Number of seconds to go to in a song
     GoTo(u64),
     Que(QueueItem),
     /// Play the first item of the QueueItem and set the rest as the queue
@@ -60,7 +62,7 @@ pub fn playback_loop(
             }
             PlaybackAction::Play(item) => playback_daemon
                 .play(item)
-                .unwrap_or_else(|err| error!("Error in Stream: {}", err)),
+                .unwrap_or_else(|err| error!("Error in Stream: {:?}", err)),
             PlaybackAction::SetVolume(vol) => playback_daemon.volume_level = vol,
             PlaybackAction::ChangeVolume(change) => playback_daemon.volume_level += change,
             _ => unimplemented!(),
