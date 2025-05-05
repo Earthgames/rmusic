@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{Error, ErrorKind};
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use cpal::Sample;
 use log::warn;
 use symphonia::core::audio::{SampleBuffer, SignalSpec};
@@ -131,7 +131,12 @@ impl SymphoniaWrapper {
                 self.finished = true;
                 return Err(error.into());
             }
-            Err(err) => return Err(err.into()),
+            Err(symphonia::core::errors::Error::DecodeError(err)) => return Err(anyhow!(err)),
+            Err(error) => {
+                // Fatal
+                self.finished = true;
+                return Err(error.into());
+            }
         };
 
         // Error?
