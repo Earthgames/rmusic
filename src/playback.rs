@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, Result};
 use cpal::Sample;
 use log::{error, warn};
+use rand::thread_rng;
 use rubato::{FftFixedInOut, Resampler};
 
 use crate::audio_conversion::{interleaved_to_planar, planar_to_interleaved};
@@ -124,13 +125,10 @@ impl PlaybackDaemon {
 
     pub fn play(&mut self, mut item: QueueItem) -> Result<()> {
         let mut queue = self.playback_context.lock_queue();
-        let track = get_track_from_item(&mut item);
+        let track = get_track_from_item(&mut item, &mut thread_rng());
         if let Some(track) = track {
-            queue.queue_items = item
-                .flatten()
-                .into_iter()
-                .map(|b| QueueItem::Track(b, false))
-                .collect();
+            //TODO: change this to a function in queue
+            queue.queue_items = item.flatten().into_iter().map(QueueItem::Track).collect();
             // Dispose of mutex guard
             drop(queue);
             self.set_track(track)?;
