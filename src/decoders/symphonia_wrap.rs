@@ -17,6 +17,8 @@ use symphonia::core::{
     units::TimeBase,
 };
 
+use super::MAXERROR;
+
 pub struct SymphoniaWrapper {
     format: Box<dyn FormatReader>,
     decoder: Box<dyn Decoder>,
@@ -28,6 +30,7 @@ pub struct SymphoniaWrapper {
     buffer_interleaved: SampleBuffer<f32>,
     buffer: VecDeque<f32>,
     left: u64,
+    finished: bool,
 }
 
 impl SymphoniaWrapper {
@@ -114,11 +117,22 @@ impl SymphoniaWrapper {
             buffer_interleaved,
             buffer,
             left,
+            finished: false,
         })
     }
 
     pub fn add_buffer(&mut self) -> Result<()> {
-        let packet = self.format.next_packet()?;
+        let packet = match self.format.next_packet() {
+            Ok(packet) => packet,
+            //TODO: will be changed in 0.6 of symphonia
+            Err(symphonia::core::errors::Error::IoError(error))
+                if error.kind() == std::io::ErrorKind::UnexpectedEof =>
+            {
+                self.finished = true;
+                return Err(error.into());
+            }
+            Err(err) => return Err(err.into()),
+        };
 
         // Error?
         if packet.track_id() != self.track_id {
@@ -140,9 +154,11 @@ impl SymphoniaWrapper {
     }
 
     pub fn fill(&mut self, data: &mut [f32]) -> Result<u64> {
-        while data.len() > self.buffer.len() {
+        let mut errors = 0;
+        while data.len() > self.buffer.len() && !self.finished && errors < MAXERROR {
             if let Err(err) = self.add_buffer() {
                 warn!("decode error: {}", err);
+                errors += 1;
             };
         }
         for i in data.iter_mut() {
@@ -157,6 +173,10 @@ impl SymphoniaWrapper {
 
     pub fn length(&self) -> u64 {
         self.length
+    }
+
+    pub fn finished(&self) -> bool {
+        self.finished
     }
 
     pub fn sample_rate(&self) -> usize {

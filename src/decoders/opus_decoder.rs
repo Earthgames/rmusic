@@ -1,3 +1,4 @@
+use log::warn;
 use opusic_c::{Channels, Decoder, SampleRate};
 use std::collections::VecDeque;
 use std::error::Error;
@@ -11,6 +12,8 @@ use byteorder::{ByteOrder, LittleEndian};
 use cpal::Sample;
 
 use crate::decoders::ogg_demuxer::OggReader;
+
+use super::MAXERROR;
 
 #[derive(Debug)]
 /// The header of the Opus Stream
@@ -234,8 +237,12 @@ impl OpusReader {
     /// Will fill up the internal buffer first, so it has enough samples
     /// to fill the data
     pub fn fill(&mut self, data: &mut [f32]) -> Result<u64> {
-        while data.len() > self.buffer.len() && !self.finished {
-            self.add_buffer()?;
+        let mut errors = 0;
+        while data.len() > self.buffer.len() && !self.finished && errors < MAXERROR {
+            if let Err(err) = self.add_buffer() {
+                warn!("decode error: {}", err);
+                errors += 1;
+            };
         }
         for i in data.iter_mut() {
             *i = self.buffer.pop_front().unwrap_or(Sample::EQUILIBRIUM)

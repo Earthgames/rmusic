@@ -8,6 +8,8 @@ mod ogg_demuxer;
 pub mod opus_decoder;
 pub mod symphonia_wrap;
 
+const MAXERROR: u8 = 20;
+
 pub enum Decoder {
     Opus(OpusReader),
     Symphonia(SymphoniaWrapper),
@@ -60,6 +62,14 @@ impl Decoder {
             Decoder::Opus(opus) => opus.length,
             Decoder::Symphonia(symp) => symp.length(),
             Decoder::None => 0,
+        }
+    }
+
+    pub fn finished(&self) -> bool {
+        match self {
+            Decoder::Opus(opus_reader) => opus_reader.finished,
+            Decoder::Symphonia(symphonia_wrapper) => symphonia_wrapper.finished(),
+            Decoder::None => true,
         }
     }
 
