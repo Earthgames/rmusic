@@ -112,11 +112,22 @@ impl QueueItem {
             track => track,
         }
     }
+    fn switch_shuffle(&mut self, new_shuffle: ShuffleType) -> Result<(), ()> {
+        match self {
+            QueueItem::Track(_) => Ok(()),
+            QueueItem::PlayList(playlist, options) => {
+                switch_shuffle(&mut options.shuffle_type, new_shuffle, playlist.len())
+            }
+            QueueItem::Album(album, options) => {
+                switch_shuffle(&mut options.shuffle_type, new_shuffle, album.len())
+            }
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct QueueOptions {
-    pub shuffel_type: ShuffelType,
+    pub shuffle_type: ShuffleType,
     pub repeat: bool,
     pub selected: Option<usize>,
 }
@@ -124,7 +135,7 @@ pub struct QueueOptions {
 impl Default for QueueOptions {
     fn default() -> Self {
         Self {
-            shuffel_type: ShuffelType::None,
+            shuffle_type: ShuffleType::None,
             repeat: false,
             selected: None,
         }
@@ -132,7 +143,7 @@ impl Default for QueueOptions {
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub enum ShuffelType {
+pub enum ShuffleType {
     None,
     TrueRandom,
     /// List of weights to avoid duplicates
@@ -144,7 +155,7 @@ pub enum ShuffelType {
     WeightedRandomWithDefault(Vec<usize>, Vec<usize>),
 }
 
-impl ShuffelType {
+impl ShuffleType {
     pub fn new_weighted_random(size: usize) -> Self {
         Self::WeightedRandom(vec![1; size])
     }
@@ -152,6 +163,31 @@ impl ShuffelType {
         let weights = vec![1; default_weights.len()];
         Self::WeightedRandomWithDefault(weights, default_weights)
     }
+}
+
+fn switch_shuffle(
+    shuffle: &mut ShuffleType,
+    new_shuffle: ShuffleType,
+    lenght: usize,
+) -> Result<(), ()> {
+    let length_check = |vec: &Vec<usize>| {
+        if vec.len() == lenght {
+            Ok(())
+        } else {
+            Err(())
+        }
+    };
+    match new_shuffle {
+        ShuffleType::WeightedRandom(ref vec) => length_check(vec)?,
+        ShuffleType::WeightedDefault(ref vec) => length_check(vec)?,
+        ShuffleType::WeightedRandomWithDefault(ref vec, ref vec1) => {
+            length_check(vec)?;
+            length_check(vec1)?;
+        }
+        _ => (),
+    }
+    *shuffle = new_shuffle;
+    Ok(())
 }
 
 impl Queue {
@@ -169,7 +205,7 @@ impl Queue {
         }
     }
 
-    ///TODO: make sure all shuffel types work
+    ///TODO: make sure all shuffle types work
     pub fn next_track(&mut self) -> Option<PathBuf> {
         if self.repeat_current && self.current_track.is_some() {
             return self.current_track.clone();
@@ -181,6 +217,14 @@ impl Queue {
         }
         self.current_track = get_track_from_list(&mut self.queue_items, options, &mut thread_rng());
         self.current_track.clone()
+    }
+
+    pub fn switch_shuffle(&mut self, new_shuffle: ShuffleType) -> Result<(), ()> {
+        switch_shuffle(
+            &mut self.queue_options.shuffle_type,
+            new_shuffle,
+            self.queue_items.len(),
+        )
     }
 
     pub fn queue_items(&self) -> &VecDeque<QueueItem> {

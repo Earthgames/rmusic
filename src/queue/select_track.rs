@@ -3,7 +3,7 @@ use rand::distributions::{Distribution, WeightedIndex};
 
 use std::{collections::VecDeque, path::PathBuf};
 
-use super::{QueueItem, QueueOptions, ShuffelType};
+use super::{QueueItem, QueueOptions, ShuffleType};
 
 pub fn get_track_from_list<R>(
     track_list: &mut VecDeque<QueueItem>,
@@ -30,14 +30,14 @@ where
 }
 
 fn remove_item<T>(list: &mut VecDeque<T>, options: &mut QueueOptions, index: usize) -> Option<T> {
-    match options.shuffel_type {
-        ShuffelType::WeightedRandom(ref mut vec) => {
+    match options.shuffle_type {
+        ShuffleType::WeightedRandom(ref mut vec) => {
             vec.remove(index);
         }
-        ShuffelType::WeightedDefault(ref mut vec) => {
+        ShuffleType::WeightedDefault(ref mut vec) => {
             vec.remove(index);
         }
-        ShuffelType::WeightedRandomWithDefault(ref mut vec, ref mut vec1) => {
+        ShuffleType::WeightedRandomWithDefault(ref mut vec, ref mut vec1) => {
             vec.remove(index);
             vec1.remove(index);
         }
@@ -79,8 +79,8 @@ where
     if list.is_empty() {
         return None;
     }
-    match &mut options.shuffel_type {
-        ShuffelType::None => match options.selected {
+    match &mut options.shuffle_type {
+        ShuffleType::None => match options.selected {
             Some(index) => {
                 let next = index + 1;
                 if next < list.len() {
@@ -93,16 +93,16 @@ where
             }
             None => Some(0),
         },
-        ShuffelType::TrueRandom => {
+        ShuffleType::TrueRandom => {
             let chosen = rng.gen_range(list.len());
             Some(chosen)
         }
-        ShuffelType::WeightedRandom(weights) => {
+        ShuffleType::WeightedRandom(weights) => {
             let chosen = rng.select_weights(weights);
             increase_weights(weights, chosen)
         }
-        ShuffelType::WeightedDefault(weights) => rng.select_weights(weights),
-        ShuffelType::WeightedRandomWithDefault(changing_weights, default_weights) => {
+        ShuffleType::WeightedDefault(weights) => rng.select_weights(weights),
+        ShuffleType::WeightedRandomWithDefault(changing_weights, default_weights) => {
             if changing_weights.len() != default_weights.len() {
                 error!("Weights are not the same lenght");
                 return None;
@@ -161,8 +161,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use rand::rngs::mock::StepRng;
-
     use super::*;
 
     struct MockRand {
@@ -211,7 +209,7 @@ mod tests {
     fn test_none_one() {
         let mut list = test_queue();
         let mut options = QueueOptions {
-            shuffel_type: ShuffelType::None,
+            shuffle_type: ShuffleType::None,
             repeat: false,
             selected: None,
         };
@@ -228,7 +226,7 @@ mod tests {
     fn test_none_two() {
         let mut list = test_queue();
         let mut options = QueueOptions {
-            shuffel_type: ShuffelType::None,
+            shuffle_type: ShuffleType::None,
             repeat: false,
             selected: None,
         };
@@ -245,7 +243,7 @@ mod tests {
     fn test_none_three() {
         let mut list = test_queue();
         let mut options = QueueOptions {
-            shuffel_type: ShuffelType::None,
+            shuffle_type: ShuffleType::None,
             repeat: true,
             selected: None,
         };
@@ -262,7 +260,7 @@ mod tests {
     fn test_true_random_one() {
         let mut list = test_queue();
         let mut options = QueueOptions {
-            shuffel_type: ShuffelType::TrueRandom,
+            shuffle_type: ShuffleType::TrueRandom,
             repeat: true,
             selected: None,
         };
