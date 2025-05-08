@@ -67,8 +67,8 @@ pub fn playback_loop(
             PlaybackAction::Play(item) => playback_daemon
                 .play(item)
                 .unwrap_or_else(|err| error!("Error in Stream: {:?}", err)),
-            PlaybackAction::SetVolume(vol) => playback_daemon.volume_level = vol,
-            PlaybackAction::ChangeVolume(change) => playback_daemon.volume_level += change,
+            PlaybackAction::SetVolume(volume) => playback_daemon.set_volume(volume),
+            PlaybackAction::ChangeVolume(change) => playback_daemon.change_volume(change),
             _ => unimplemented!(),
         }
     }

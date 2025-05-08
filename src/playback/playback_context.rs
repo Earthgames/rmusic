@@ -1,11 +1,12 @@
 use std::{
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::{
         atomic::{AtomicU64, AtomicUsize, Ordering},
-        Arc, Mutex, MutexGuard,
+        Arc, Mutex,
     },
 };
 
+use atomic_float::AtomicF32;
 use log::error;
 
 use crate::queue::Queue;
@@ -17,6 +18,7 @@ pub struct PlaybackContext {
     left: AtomicU64,
     length: AtomicU64,
     sample_rate: AtomicUsize,
+    volume_level: AtomicF32,
 }
 
 impl PlaybackContext {
@@ -25,30 +27,55 @@ impl PlaybackContext {
         let left = AtomicU64::new(0);
         let length = AtomicU64::new(0);
         let sample_rate = AtomicUsize::new(0);
+        let volume_level = AtomicF32::new(100.0);
         Arc::new(PlaybackContext {
             queue,
             left,
             length,
             sample_rate,
+            volume_level,
         })
     }
-    pub(crate) fn new_from(length: u64, track: PathBuf, sample_rate: usize) -> ArcPlaybackContext {
+
+    pub(crate) fn new_from(
+        length: u64,
+        track: PathBuf,
+        sample_rate: usize,
+        volume_level: f32,
+    ) -> ArcPlaybackContext {
         let mut queue = Queue::new();
         queue.current_track = Some(track);
         let queue = Mutex::new(queue);
         let left = AtomicU64::new(length);
         let length = AtomicU64::new(length);
         let sample_rate = AtomicUsize::new(sample_rate);
+        let volume_level = AtomicF32::new(volume_level);
         Arc::new(PlaybackContext {
             queue,
             left,
             length,
             sample_rate,
+            volume_level,
         })
     }
+
     pub(crate) fn update_left(&self, left: u64) {
         self.left.store(left, Ordering::Relaxed)
     }
+
+    pub fn update_volume_level(&self, volume_level: f32) {
+        self.volume_level
+            .store(volume_level.max(0.0), Ordering::Relaxed);
+    }
+
+    pub fn change_volume_level(&self, volume_change: f32) {
+        let new = self
+            .volume_level
+            .fetch_add(volume_change, Ordering::Relaxed)
+            + volume_change;
+        self.volume_level.store(new.max(0.0), Ordering::Relaxed);
+    }
+
     pub(crate) fn lock_queue(&self) -> std::sync::MutexGuard<'_, Queue> {
         match self.queue.lock() {
             Ok(queue) => queue,
@@ -60,6 +87,7 @@ impl PlaybackContext {
             }
         }
     }
+
     pub(crate) fn set_track(&self, track: PathBuf, length: u64, sample_rate: usize) {
         self.length.store(length, Ordering::Relaxed);
         self.sample_rate.store(sample_rate, Ordering::Relaxed);
@@ -78,5 +106,8 @@ impl PlaybackContext {
     }
     pub fn sample_rate(&self) -> usize {
         self.sample_rate.load(Ordering::Relaxed)
+    }
+    pub fn volume_level(&self) -> f32 {
+        self.volume_level.load(Ordering::Relaxed)
     }
 }

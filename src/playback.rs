@@ -23,7 +23,6 @@ pub struct PlaybackDaemon {
     decoder: Decoder,
     resampler: PlaybackResampler,
     buffer_output: VecDeque<f32>,
-    pub volume_level: f32,
     sample_rate_output: usize,
 }
 
@@ -48,7 +47,6 @@ impl PlaybackDaemon {
             playback_context: PlaybackContext::new(),
             resampler: PlaybackResampler::new(1, 1, 2).expect("should be fine"),
             buffer_output: VecDeque::new(),
-            volume_level: 0.0,
             sample_rate_output,
         }
     }
@@ -65,8 +63,12 @@ impl PlaybackDaemon {
             sample_rate_output,
             decoder.channels(),
         )?;
-        let playback_context =
-            PlaybackContext::new_from(decoder.length(), current, decoder.sample_rate());
+        let playback_context = PlaybackContext::new_from(
+            decoder.length(),
+            current,
+            decoder.sample_rate(),
+            volume_level,
+        );
 
         Some(PlaybackDaemon {
             playing: true,
@@ -74,7 +76,6 @@ impl PlaybackDaemon {
             playback_context,
             resampler,
             buffer_output: VecDeque::new(),
-            volume_level,
             sample_rate_output,
         })
     }
@@ -83,8 +84,9 @@ impl PlaybackDaemon {
         while data.len() > self.buffer_output.len() {
             self.add_buffer()?;
         }
+        let volume_level = self.playback_context.volume_level();
         for i in data.iter_mut() {
-            *i = self.volume_level
+            *i = volume_level
                 * self.buffer_output.pop_front().unwrap_or_else(|| {
                     error!("AHAH, No BuFFerS");
                     Sample::EQUILIBRIUM
@@ -130,7 +132,10 @@ impl PlaybackDaemon {
     }
 
     pub fn goto(&mut self, target: u64) -> Result<()> {
-        self.decoder.goto(target)
+        self.decoder.goto(target)?;
+        self.playback_context
+            .update_left(self.decoder.length() - target);
+        Ok(())
     }
 
     pub fn play(&mut self, mut item: QueueItem) -> Result<()> {
@@ -151,6 +156,14 @@ impl PlaybackDaemon {
 
     pub fn current_length(&self) -> u64 {
         self.decoder.length()
+    }
+
+    pub fn set_volume(&self, volume_level: f32) {
+        self.playback_context.update_volume_level(volume_level);
+    }
+
+    pub fn change_volume(&self, volume_change: f32) {
+        self.playback_context.change_volume_level(volume_change);
     }
 
     pub fn sample_rate_input(&self) -> usize {

@@ -28,3 +28,4 @@ anyhow = "1.0" # error handeling
 sea-orm = { version = "1.0", features = ["sqlx-sqlite", "macros", "debug-print" ] } # sqlite orm
 tokio = { version = "1", features = ["full"] } # async
 rand = "0.8" # random things
+atomic_float = "1"
