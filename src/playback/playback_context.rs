@@ -76,7 +76,7 @@ impl PlaybackContext {
         self.volume_level.store(new.max(0.0), Ordering::Relaxed);
     }
 
-    pub(crate) fn lock_queue(&self) -> std::sync::MutexGuard<'_, Queue> {
+    pub fn lock_queue(&self) -> std::sync::MutexGuard<'_, Queue> {
         match self.queue.lock() {
             Ok(queue) => queue,
             Err(err) => {
@@ -109,5 +109,25 @@ impl PlaybackContext {
     }
     pub fn volume_level(&self) -> f32 {
         self.volume_level.load(Ordering::Relaxed)
+    }
+    pub fn played(&self) -> u64 {
+        self.length().saturating_sub(self.left())
+    }
+    pub fn played_sec(&self) -> u64 {
+        self.some_sec(self.played())
+    }
+    pub fn length_sec(&self) -> u64 {
+        self.some_sec(self.length())
+    }
+    pub fn left_sec(&self) -> u64 {
+        self.some_sec(self.left())
+    }
+    fn some_sec(&self, sample_count: u64) -> u64 {
+        let sample_rate = self.sample_rate();
+        if sample_rate == 0 {
+            0
+        } else {
+            sample_count / sample_rate as u64
+        }
     }
 }

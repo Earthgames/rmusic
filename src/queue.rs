@@ -255,6 +255,14 @@ impl Queue {
         )
     }
 
+    pub fn cycle_shuffle(&mut self) {
+        self.queue_options.shuffle_type = match &self.queue_options.shuffle_type {
+            ShuffleType::None => ShuffleType::TrueRandom,
+            ShuffleType::TrueRandom => ShuffleType::new_weighted_random(self.queue_items.len()),
+            _ => ShuffleType::None,
+        }
+    }
+
     pub fn queue_items(&self) -> &VecDeque<QueueItem> {
         &self.queue_items
     }
@@ -265,6 +273,10 @@ impl Queue {
 
     pub fn append_track(mut self, track: PathBuf) {
         self.queue_items.push_back(QueueItem::Track(track));
+    }
+
+    pub fn current_track(&self) -> &Option<PathBuf> {
+        &self.current_track
     }
 
     pub fn append_playlist(mut self, playlist: Vec<QueueItem>, options: QueueOptions) {
