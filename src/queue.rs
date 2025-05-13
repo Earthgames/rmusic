@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, path::PathBuf};
+use std::{collections::VecDeque, fmt::Display, path::PathBuf};
 
 mod select_track;
 
@@ -112,7 +112,8 @@ impl QueueItem {
             track => track,
         }
     }
-    fn switch_shuffle(&mut self, new_shuffle: ShuffleType) -> Result<(), ()> {
+
+    pub fn switch_shuffle(&mut self, new_shuffle: ShuffleType) -> Result<(), ShuffleError> {
         match self {
             QueueItem::Track(_) => Ok(()),
             QueueItem::PlayList(playlist, options) => {
@@ -163,18 +164,45 @@ impl ShuffleType {
         let weights = vec![1; default_weights.len()];
         Self::WeightedRandomWithDefault(weights, default_weights)
     }
+    pub fn display_small(&self) -> &str {
+        match self {
+            ShuffleType::None => "N",
+            ShuffleType::TrueRandom => "TR",
+            ShuffleType::WeightedRandom(_) => "WR",
+            ShuffleType::WeightedDefault(_) => "WD",
+            ShuffleType::WeightedRandomWithDefault(_, _) => "WRD",
+        }
+    }
+}
+
+impl Display for ShuffleType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ShuffleType::None => write!(f, "None"),
+            ShuffleType::TrueRandom => write!(f, "TrueRandom"),
+            ShuffleType::WeightedRandom(_) => write!(f, "WeightedRandom"),
+            ShuffleType::WeightedDefault(_) => write!(f, "WeightedDefault"),
+            ShuffleType::WeightedRandomWithDefault(_, _) => write!(f, "WeightedRandomWithDefault"),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum ShuffleError {
+    /// The length doesn't match
+    WrongLength,
 }
 
 fn switch_shuffle(
     shuffle: &mut ShuffleType,
     new_shuffle: ShuffleType,
     lenght: usize,
-) -> Result<(), ()> {
+) -> Result<(), ShuffleError> {
     let length_check = |vec: &Vec<usize>| {
         if vec.len() == lenght {
             Ok(())
         } else {
-            Err(())
+            Err(ShuffleError::WrongLength)
         }
     };
     match new_shuffle {
@@ -219,7 +247,7 @@ impl Queue {
         self.current_track.clone()
     }
 
-    pub fn switch_shuffle(&mut self, new_shuffle: ShuffleType) -> Result<(), ()> {
+    pub fn switch_shuffle(&mut self, new_shuffle: ShuffleType) -> Result<(), ShuffleError> {
         switch_shuffle(
             &mut self.queue_options.shuffle_type,
             new_shuffle,
