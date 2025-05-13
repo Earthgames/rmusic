@@ -1,5 +1,9 @@
+use std::path::Path;
+
 use super::Library;
+use entity::track_location;
 use entity::{artist, release, track};
+use log::error;
 use sea_orm::prelude::*;
 use sea_orm::EntityTrait;
 
@@ -24,6 +28,24 @@ impl Library {
     {
         model
             .find_related::<R>(R::default())
+            .one(&self.database)
+            .await
+    }
+
+    pub async fn get_track(&self, path: &Path) -> Result<Option<track::Model>> {
+        let path = match path.canonicalize() {
+            Ok(path) => path,
+            Err(err) => {
+                error!(
+                    "Error canonicalizing path: {}\nerr: {}",
+                    path.display(),
+                    err
+                );
+                return Err(DbErr::Custom("Error canonicalizing path".into()));
+            }
+        };
+        track_location::Entity::find_related()
+            .filter(track_location::Column::Path.eq(path.to_str()))
             .one(&self.database)
             .await
     }

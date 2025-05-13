@@ -124,7 +124,7 @@ impl SymphoniaWrapper {
     pub fn add_buffer(&mut self) -> Result<()> {
         let packet = match self.format.next_packet() {
             Ok(packet) => packet,
-            //TODO: will be changed in 0.6 of symphonia
+            //INFO: will be changed in 0.6 of symphonia
             Err(symphonia::core::errors::Error::IoError(error))
                 if error.kind() == std::io::ErrorKind::UnexpectedEof =>
             {
