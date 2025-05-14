@@ -1,4 +1,4 @@
-use log::error;
+use log::{debug, error};
 use rand::distributions::{Distribution, WeightedIndex};
 
 use std::{collections::VecDeque, path::PathBuf};
@@ -23,6 +23,13 @@ where
     };
     let new_track = get_track_from_item(&mut track_list[new_index], rng);
     if track_list.get(new_index)?.is_empty() && !options.repeat {
+        debug!(
+            "Removed {} from queue",
+            new_track
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or("None".to_string()),
+        );
         options.selected = None;
         remove_item(track_list, options, new_index);
     }
