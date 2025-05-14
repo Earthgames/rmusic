@@ -42,7 +42,7 @@ pub fn playback_loop(
             PlaybackAction::PlayPause => playback_daemon.playing = !playback_daemon.playing,
             PlaybackAction::GoTo(target) => playback_daemon
                 .goto(target * playback_daemon.sample_rate_input() as u64)
-                .unwrap_or_else(|err| error!("Error in Stream: {}", err)),
+                .unwrap_or_else(|err| error!("Error in Stream: {:?}", err)),
             PlaybackAction::FastForward(amount) => {
                 let current = playback_daemon.current_length() - playback_daemon.left();
                 let target = current + amount * playback_daemon.sample_rate_input() as u64;
@@ -54,7 +54,7 @@ pub fn playback_loop(
                 };
                 playback_daemon
                     .goto(goto)
-                    .unwrap_or_else(|err| error!("Error in Stream: {}", err))
+                    .unwrap_or_else(|err| error!("Error in Stream: {:?}", err))
             }
             PlaybackAction::Rewind(amount) => {
                 let current = playback_daemon.current_length() - playback_daemon.left();
@@ -62,7 +62,7 @@ pub fn playback_loop(
                 let goto = current.saturating_sub(amount);
                 playback_daemon
                     .goto(goto)
-                    .unwrap_or_else(|err| error!("Error in Stream: {}", err))
+                    .unwrap_or_else(|err| error!("Error in Stream: {:?}", err))
             }
             PlaybackAction::Play(item) => playback_daemon
                 .play(item)
@@ -74,7 +74,7 @@ pub fn playback_loop(
     }
     if playback_daemon.playing {
         playback_daemon.fill(data).unwrap_or_else(|err| {
-            error!("Error in Stream: {}", err);
+            error!("Error in Stream: {:?}", err);
         });
     } else {
         for i in data.iter_mut() {

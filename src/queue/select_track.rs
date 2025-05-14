@@ -118,7 +118,7 @@ where
     }
 }
 
-fn increase_weights(weights: &mut Vec<usize>, chosen: Option<usize>) -> Option<usize> {
+fn increase_weights(weights: &mut [usize], chosen: Option<usize>) -> Option<usize> {
     weights.iter_mut().for_each(|w| *w += 1);
     if let Some(x) = weights.get_mut(chosen?) {
         *x = 0;
@@ -126,7 +126,7 @@ fn increase_weights(weights: &mut Vec<usize>, chosen: Option<usize>) -> Option<u
     chosen
 }
 
-fn select_weights<R>(weights: &Vec<usize>, mut rng: R) -> Option<usize>
+fn select_weights<R>(weights: &[usize], mut rng: R) -> Option<usize>
 where
     R: rand::Rng,
 {
@@ -143,7 +143,7 @@ where
 
 pub trait RandTrack {
     fn gen_range(&mut self, end: usize) -> usize;
-    fn select_weights(&mut self, weights: &Vec<usize>) -> Option<usize>;
+    fn select_weights(&mut self, weights: &[usize]) -> Option<usize>;
 }
 
 impl<R> RandTrack for R
@@ -154,7 +154,7 @@ where
         self.gen_range(0..end)
     }
 
-    fn select_weights(&mut self, weights: &Vec<usize>) -> Option<usize> {
+    fn select_weights(&mut self, weights: &[usize]) -> Option<usize> {
         select_weights(weights, self)
     }
 }
@@ -174,7 +174,7 @@ mod tests {
             chosen
         }
 
-        fn select_weights(&mut self, weights: &Vec<usize>) -> Option<usize> {
+        fn select_weights(&mut self, weights: &[usize]) -> Option<usize> {
             let max = weights.iter().max()?;
             for (i, x) in weights.iter().enumerate() {
                 if x == max {
