@@ -234,7 +234,7 @@ impl Queue {
     }
 
     ///TODO: make sure all shuffle types work
-    pub fn next_track(&mut self) -> Option<PathBuf> {
+    pub(crate) fn next_track(&mut self) -> Option<PathBuf> {
         if self.repeat_current && self.current_track.is_some() {
             return self.current_track.clone();
         }
@@ -271,7 +271,7 @@ impl Queue {
         &self.played_items
     }
 
-    pub fn append_track(mut self, track: PathBuf) {
+    pub fn append_track(&mut self, track: PathBuf) {
         self.queue_items.push_back(QueueItem::Track(track));
     }
 
@@ -279,14 +279,28 @@ impl Queue {
         &self.current_track
     }
 
-    pub fn append_playlist(mut self, playlist: Vec<QueueItem>, options: QueueOptions) {
+    pub fn append_playlist(&mut self, playlist: VecDeque<QueueItem>, options: QueueOptions) {
         self.queue_items
-            .push_back(QueueItem::PlayList(playlist.into(), options))
+            .push_back(QueueItem::PlayList(playlist, options))
     }
 
-    pub fn append_album(mut self, album: Vec<PathBuf>, options: QueueOptions) {
-        self.queue_items
-            .push_back(QueueItem::Album(album.into(), options))
+    pub fn append_album(&mut self, album: VecDeque<PathBuf>, options: QueueOptions) {
+        self.queue_items.push_back(QueueItem::Album(album, options))
+    }
+
+    pub fn append_queue_item(&mut self, item: QueueItem, flatten: bool) {
+        if flatten {
+            let tracks = item.flatten();
+            for track in tracks {
+                self.append_track(track);
+            }
+        } else {
+            match item {
+                QueueItem::Track(track) => self.append_track(track),
+                QueueItem::PlayList(playlist, options) => self.append_playlist(playlist, options),
+                QueueItem::Album(album, options) => self.append_album(album, options),
+            }
+        }
     }
 
     /// Flattens the queue to only contain tracks
