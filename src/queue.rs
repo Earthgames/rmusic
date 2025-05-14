@@ -247,6 +247,16 @@ impl Queue {
         self.current_track.clone()
     }
 
+    pub(crate) fn play_queue_item(
+        &mut self,
+        queue_item: QueueItem,
+        flatten: bool,
+    ) -> Option<PathBuf> {
+        self.queue_items.clear();
+        self.append_queue_item(queue_item, flatten);
+        self.next_track()
+    }
+
     pub fn switch_shuffle(&mut self, new_shuffle: ShuffleType) -> Result<(), ShuffleError> {
         switch_shuffle(
             &mut self.queue_options.shuffle_type,

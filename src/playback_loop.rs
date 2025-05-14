@@ -50,7 +50,7 @@ pub fn playback_loop(
                     target
                 } else {
                     //TODO: replace with next track
-                    playback_daemon.current_length()
+                    playback_daemon.current_length() - 1
                 };
                 playback_daemon
                     .goto(goto)
@@ -64,8 +64,9 @@ pub fn playback_loop(
                     .goto(goto)
                     .unwrap_or_else(|err| error!("Error in Stream: {:?}", err))
             }
+            //TODO: Change this to include the flatten option
             PlaybackAction::Play(item) => playback_daemon
-                .play(item)
+                .play(item, true)
                 .unwrap_or_else(|err| error!("Error in Stream: {:?}", err)),
             PlaybackAction::SetVolume(volume) => playback_daemon.set_volume(volume),
             PlaybackAction::ChangeVolume(change) => playback_daemon.change_volume(change),

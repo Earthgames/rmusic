@@ -138,14 +138,12 @@ impl PlaybackDaemon {
         Ok(())
     }
 
-    pub fn play(&mut self, mut item: QueueItem) -> Result<()> {
+    pub fn play(&mut self, item: QueueItem, flatten: bool) -> Result<()> {
         let mut queue = self.playback_context.lock_queue();
-        let track = get_track_from_item(&mut item, &mut thread_rng());
+        let track = queue.play_queue_item(item, flatten);
+        // Dispose of mutex guard
+        drop(queue);
         if let Some(track) = track {
-            //TODO: change this to a function in queue
-            queue.queue_items = item.flatten().into_iter().map(QueueItem::Track).collect();
-            // Dispose of mutex guard
-            drop(queue);
             self.set_track(track)?;
             self.playing = true;
         } else {
