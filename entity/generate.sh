@@ -1,2 +1,2 @@
-!#/bin/sh
-sea-orm-cli generate entity -l -u sqlite:./../database/main.sqlite -o src
+#!/bin/sh
+sea-orm-cli generate entity -l -u sqlite:./../../main.sqlite -o src
