@@ -1,4 +1,4 @@
-use crate::types::{Playlist, PlaylistItem, Track};
+use crate::types::{Playlist, PlaylistItem, Release, Track};
 use sea_orm_migration::{prelude::*, schema::*};
 
 #[derive(DeriveMigrationName)]
@@ -32,6 +32,15 @@ impl MigrationTrait for Migration {
                             .name("fk-playlist_item_playlist-playlist_id")
                             .from(PlaylistItem::Table, PlaylistItem::ItemPlaylistId)
                             .to(Playlist::Table, Playlist::Id)
+                            .on_delete(ForeignKeyAction::SetNull)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .col(integer_null(PlaylistItem::ItemReleaseId))
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk-playlist_item_release-release_id")
+                            .from(PlaylistItem::Table, PlaylistItem::ItemReleaseId)
+                            .to(Release::Table, Release::Id)
                             .on_delete(ForeignKeyAction::SetNull)
                             .on_update(ForeignKeyAction::Cascade),
                     )

@@ -64,6 +64,7 @@ pub enum PlaylistItem {
     Deleted,
     Type,
     ItemTrackId,
+    ItemReleaseId,
     ItemPlaylistId,
 }
 

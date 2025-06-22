@@ -13,6 +13,7 @@ pub struct Model {
     pub deleted: bool,
     pub playlist_id: i32,
     pub item_playlist_id: Option<i32>,
+    pub item_release_id: Option<i32>,
     pub item_track_id: Option<i32>,
 }
 
@@ -35,6 +36,14 @@ pub enum Relation {
     )]
     Playlist1,
     #[sea_orm(
+        belongs_to = "super::release::Entity",
+        from = "Column::ItemReleaseId",
+        to = "super::release::Column::Id",
+        on_update = "Cascade",
+        on_delete = "SetNull"
+    )]
+    Release,
+    #[sea_orm(
         belongs_to = "super::track::Entity",
         from = "Column::ItemTrackId",
         to = "super::track::Column::Id",
@@ -42,6 +51,12 @@ pub enum Relation {
         on_delete = "SetNull"
     )]
     Track,
+}
+
+impl Related<super::release::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Release.def()
+    }
 }
 
 impl Related<super::track::Entity> for Entity {

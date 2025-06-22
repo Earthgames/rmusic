@@ -24,6 +24,8 @@ pub enum Relation {
         on_delete = "Restrict"
     )]
     Artist,
+    #[sea_orm(has_many = "super::playlist_item::Entity")]
+    PlaylistItem,
     #[sea_orm(
         belongs_to = "super::publisher::Entity",
         from = "Column::PublisherId",
@@ -39,6 +41,12 @@ pub enum Relation {
 impl Related<super::artist::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Artist.def()
+    }
+}
+
+impl Related<super::playlist_item::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::PlaylistItem.def()
     }
 }
 
