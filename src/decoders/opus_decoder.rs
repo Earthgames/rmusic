@@ -6,6 +6,7 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io::BufReader;
+use std::ops::SubAssign;
 
 use anyhow::{anyhow, Result};
 use byteorder::{ByteOrder, LittleEndian};
@@ -202,7 +203,7 @@ impl OpusReader {
             self.buffer
                 .extend(self.samples[self.package_size - last as usize..self.package_size].iter());
         } else {
-            self.left -= self.package_size as u64;
+            self.left = self.left.saturating_sub(self.package_size as u64);
             self.buffer.extend(self.samples.iter());
         };
         Ok(())
