@@ -1,156 +1,345 @@
-use log::{debug, error};
-use rand::distributions::{Distribution, WeightedIndex};
+use log::{error, warn};
+use rand::distributions::{Distribution, WeightedError, WeightedIndex};
 
 use std::{collections::VecDeque, path::PathBuf};
 
-use super::{QueueItem, QueueOptions, ShuffleType};
+use crate::queue::DEPTH_LIMIT;
 
-pub fn get_track_from_list<R>(
-    track_list: &mut VecDeque<QueueItem>,
+use super::{queue_items::QueueTrack, Queue, QueueItem, QueueOptions, ShuffleType};
+
+impl Queue {
+    //TODO: make sure all shuffle types work
+    pub(crate) fn next_track(&mut self) -> Option<PathBuf> {
+        // Case: Repeat Current
+        if self.repeat_current && self.current_track.is_some() {
+            return self.current_track.clone();
+        }
+        // Case: Tracks in self.next_up
+        if !self.next_up.iter().all(|x| x.is_empty()) {
+            fn zero(_: usize, _: &mut QueueOptions) -> usize {
+                0
+            }
+            let track = double_recurse(
+                zero,
+                &mut self.next_up,
+                &mut self.played_items,
+                &mut self.queue_options,
+            )?;
+            return Some(track.location().into());
+        }
+        // Case: Tracks in self.queue_items
+        // Get them with the right randomization, don't remove them
+
+        if !self.queue_items.iter().all(|x| x.is_empty()) {
+            fn decide(
+                length: usize,
+                options: &mut QueueOptions,
+            ) -> Result<Option<usize>, SelectError> {
+                get_random(length, options, &mut rand::thread_rng())
+            }
+            match recurse(decide, &mut self.queue_items, &mut self.queue_options) {
+                Ok(Some(track)) => {
+                    return Some(track.location().into())
+                },
+                Ok(None) => return None,
+                Err(err) => {
+                    error!("{:?}", err);
+                    return None
+                }
+            }
+        }
+        None
+    }
+}
+
+fn double_recurse(
+    decide: fn(usize, &mut QueueOptions) -> usize,
+    source: &mut VecDeque<QueueItem>,
+    history: &mut VecDeque<QueueItem>,
     options: &mut QueueOptions,
-    rng: &mut R,
-) -> Option<PathBuf>
-where
-    R: RandTrack,
-{
-    let new_index = match options.selected {
-        Some(index) if !track_list.get(index)?.is_empty() => index,
-        _ => {
-            let new_index = get_random(track_list, options, rng);
-            options.selected = new_index;
-            new_index?
+) -> Option<QueueTrack> {
+    double_recurse_internal(decide, source, history, options, 0)
+}
+
+fn double_recurse_internal(
+    decide: fn(usize, &mut QueueOptions) -> usize,
+    source: &mut VecDeque<QueueItem>,
+    history: &mut VecDeque<QueueItem>,
+    options: &mut QueueOptions,
+    depth: usize,
+) -> Option<QueueTrack> {
+    if depth > DEPTH_LIMIT {
+        warn!("Reached Depth limit in next_up");
+        return None;
+    }
+    let chosen = decide(source.len(), options);
+    match source.get(chosen)? {
+        QueueItem::Track(track) => Some(move_track(source, history, track.clone(), chosen)),
+        QueueItem::Playlist(playlist) => {
+            // Check if it exists in history, else add it to history, recurs into it
+            let id = playlist.id();
+
+            let create_index = |history: &mut VecDeque<QueueItem>| {
+                // create the playlist in the history
+                let id = history.len();
+                history.push_back(playlist.empty_clone().into());
+                id
+            };
+            let history_id = find_id(history, id, chosen, create_index);
+
+            let (source_list, options) = get_playlist_item(source, chosen)?;
+            let (history_list, _) = get_playlist_item(history, history_id)?;
+
+            double_recurse_internal(decide, source_list, history_list, options, depth + 1)
         }
+        QueueItem::Album(album) => {
+            // Check if it exists in history, else add it to history, recurs into it
+            let id = album.id();
+
+            let create_index = |history: &mut VecDeque<QueueItem>| {
+                // create the playlist in the history
+                let id = history.len();
+                history.push_back(album.empty_clone().into());
+                id
+            };
+            let history_id = find_id(history, id, chosen, create_index);
+
+            let (source_list, options) = get_album_item(source, chosen)?;
+            let (history_list, _) = get_album_item(history, history_id)?;
+
+            let chosen = decide(source_list.len(), options);
+            let track = source_list.get(chosen)?.clone();
+            Some(move_track(source_list, history_list, track, chosen))
+        }
+    }
+}
+
+/// Remove queue_track from source, and add it to history, also return it
+fn move_track<T>(
+    source: &mut VecDeque<T>,
+    history: &mut VecDeque<T>,
+    track: QueueTrack,
+    index: usize,
+) -> QueueTrack
+where
+    QueueTrack: Into<T>,
+{
+    source.remove(index);
+    let track = track.clone();
+    history.push_back(track.clone().into());
+    track
+}
+
+fn recurse(
+    decide: fn(usize, &mut QueueOptions) -> Result<Option<usize>, SelectError>,
+    source: &mut VecDeque<QueueItem>,
+    options: &mut QueueOptions,
+) -> Result<Option<QueueTrack>, SelectError> {
+    recurse_internal(decide, source, options, 0)
+}
+
+fn recurse_internal(
+    decide: fn(usize, &mut QueueOptions) -> Result<Option<usize>, SelectError>,
+    source: &mut VecDeque<QueueItem>,
+    options: &mut QueueOptions,
+    depth: usize,
+) -> Result<Option<QueueTrack>, SelectError> {
+    if depth > DEPTH_LIMIT {
+        return Err(SelectError::MaxDepthReached);
+    }
+    let chosen = match decide(source.len(), options)? {
+        Some(index) => index,
+        // can't do anything with this
+        None => return Ok(None),
     };
-    let new_track = get_track_from_item(&mut track_list[new_index], rng);
-    if track_list.get(new_index)?.is_empty() && !options.repeat {
-        debug!(
-            "Removed {} from queue",
-            new_track
-                .as_ref()
-                .map(|p| p.display().to_string())
-                .unwrap_or("None".to_string()),
-        );
-        options.selected = None;
-        remove_item(track_list, options, new_index);
-    }
-    new_track
-}
-
-fn remove_item<T>(list: &mut VecDeque<T>, options: &mut QueueOptions, index: usize) -> Option<T> {
-    match options.shuffle_type {
-        ShuffleType::WeightedRandom(ref mut vec) => {
-            vec.remove(index);
+    let item = match source.get_mut(chosen) {
+        Some(item) => item,
+        //WARN: Error?
+        None => return Ok(None),
+    };
+    match item {
+        QueueItem::Track(queue_track) => Ok(Some(queue_track.clone())),
+        QueueItem::Playlist(queue_playlist) => {
+            // recurse
+            let source = &mut queue_playlist.playlist_items;
+            if source.is_empty() {
+                return Ok(None);
+            }
+            let options = &mut queue_playlist.queue_option;
+            for _ in 0..DEPTH_LIMIT {
+                let result = recurse_internal(decide, source, options, depth + 1)?;
+                // On None we retry
+                if let Some(track) = result {
+                    return Ok(Some(track));
+                }
+            }
+            Ok(None)
         }
-        ShuffleType::WeightedDefault(ref mut vec) => {
-            vec.remove(index);
-        }
-        ShuffleType::WeightedRandomWithDefault(ref mut vec, ref mut vec1) => {
-            vec.remove(index);
-            vec1.remove(index);
-        }
-        _ => (),
-    }
-    list.remove(index)
-}
-
-pub fn get_track_from_item<R>(queue_item: &mut QueueItem, rng: &mut R) -> Option<PathBuf>
-where
-    R: RandTrack,
-{
-    match queue_item {
-        QueueItem::Track(track) => Some(track.to_path_buf()),
-        QueueItem::PlayList(playlist, options) => get_track_from_list(playlist, options, rng),
-        QueueItem::Album(album, options) => {
-            let index = get_random(album, options, rng)?;
-            if options.repeat {
-                options.selected = Some(index);
-                album.get(index).cloned()
-            } else {
-                options.selected = None;
-                remove_item(album, options, index)
+        QueueItem::Album(queue_album) => {
+            let source = &mut queue_album.tracks;
+            let options = &mut queue_album.queue_option;
+            if source.is_empty() {
+                return Ok(None);
+            }
+            let chosen = decide(source.len(), options)?;
+            match chosen {
+                Some(index) => Ok(source.get(index).cloned()),
+                None => Ok(None),
             }
         }
     }
 }
 
-// Logic for the QueueOptions and thus ShuffelType
-fn get_random<T, R>(
-    list: &mut VecDeque<T>,
+fn get_album_item(
+    list: &mut VecDeque<QueueItem>,
+    index: usize,
+) -> Option<(&mut VecDeque<QueueTrack>, &mut QueueOptions)> {
+    match list.get_mut(index) {
+        Some(QueueItem::Album(album)) => Some((&mut album.tracks, &mut album.queue_option)),
+        _ => None,
+    }
+}
+
+fn get_playlist_item(
+    list: &mut VecDeque<QueueItem>,
+    index: usize,
+) -> Option<(&mut VecDeque<QueueItem>, &mut QueueOptions)> {
+    match list.get_mut(index) {
+        Some(QueueItem::Playlist(playlist)) => {
+            Some((&mut playlist.playlist_items, &mut playlist.queue_option))
+        }
+        _ => None,
+    }
+}
+
+fn find_id<F>(
+    list: &mut VecDeque<QueueItem>,
+    id: usize,
+    fast_index: usize,
+    create_index: F,
+) -> usize
+where
+    F: FnOnce(&mut VecDeque<QueueItem>) -> usize,
+{
+    match list.get(fast_index) {
+        Some(item) if item.has_id(id) => return fast_index,
+        _ => (),
+    }
+    let mut found = None;
+    // we go backwards because there is a bigger chance it is in the back
+    for (i, e) in list.iter().enumerate().rev() {
+        if e.has_id(id) {
+            found = Some(i);
+            break;
+        }
+    }
+    match found {
+        Some(i) => i,
+        None => create_index(list),
+    }
+}
+
+#[derive(Debug)]
+enum SelectError {
+    /// The underlying weight library errored
+    Weight(WeightedError),
+    /// The lenght of a weight list was wrong
+    /// (inside the QueueOptions)
+    SizeError,
+    /// The Depth limit was reached when traversing a playlist
+    MaxDepthReached,
+}
+
+impl From<WeightedError> for SelectError {
+    fn from(value: WeightedError) -> Self {
+        SelectError::Weight(value)
+    }
+}
+
+/// Logic for the QueueOptions and thus ShuffelType
+fn get_random<R>(
+    list_len: usize,
     options: &mut QueueOptions,
     rng: &mut R,
-) -> Option<usize>
+) -> Result<Option<usize>, SelectError>
 where
-    T: Clone,
     R: RandTrack,
 {
-    if list.is_empty() {
-        return None;
-    }
-    match &mut options.shuffle_type {
+    check_weight_length(&options.shuffle_type, list_len)?;
+    let chosen = match &mut options.shuffle_type {
         ShuffleType::None => match options.selected {
             Some(index) => {
+                // Get next item
                 let next = index + 1;
-                if next < list.len() {
+                if next < list_len {
                     Some(next)
-                } else if options.repeat {
-                    Some(0)
                 } else {
                     None
                 }
             }
+            // First time in this list, so select first item
             None => Some(0),
         },
         ShuffleType::TrueRandom => {
-            let chosen = rng.gen_range(list.len());
+            let chosen = rng.gen_range(list_len);
             Some(chosen)
         }
         ShuffleType::WeightedRandom(weights) => {
-            let chosen = rng.select_weights(weights);
-            increase_weights(weights, chosen)
+            let chosen = rng.select_weights(weights)?;
+            Some(increase_weights(weights, chosen))
         }
-        ShuffleType::WeightedDefault(weights) => rng.select_weights(weights),
+        ShuffleType::WeightedDefault(weights) => Some(rng.select_weights(weights)?),
         ShuffleType::WeightedRandomWithDefault(changing_weights, default_weights) => {
             if changing_weights.len() != default_weights.len() {
-                error!("Weights are not the same lenght");
-                return None;
+                return Err(SelectError::SizeError);
+            } else {
+                // add weights
+                let weights = changing_weights
+                    .iter()
+                    .zip(default_weights.iter())
+                    .map(|(a, b)| *a + *b)
+                    .collect::<Vec<_>>();
+                let chosen = rng.select_weights(&weights)?;
+                Some(increase_weights(changing_weights, chosen))
             }
-            let weights = changing_weights
-                .iter()
-                .zip(default_weights.iter())
-                .map(|(a, b)| *a + *b)
-                .collect::<Vec<_>>();
-            let chosen = rng.select_weights(&weights);
-            increase_weights(changing_weights, chosen)
         }
-    }
+    };
+    options.selected = chosen;
+    Ok(chosen)
 }
 
-fn increase_weights(weights: &mut [usize], chosen: Option<usize>) -> Option<usize> {
+/// Increase all weights, and reset the chosen to 0
+fn increase_weights(weights: &mut [usize], chosen: usize) -> usize {
     weights.iter_mut().for_each(|w| *w += 1);
-    if let Some(x) = weights.get_mut(chosen?) {
+    if let Some(x) = weights.get_mut(chosen) {
         *x = 0;
     }
     chosen
 }
 
-fn select_weights<R>(weights: &[usize], mut rng: R) -> Option<usize>
-where
-    R: rand::Rng,
-{
-    let dist = match WeightedIndex::new(weights) {
-        Ok(d) => d,
-        Err(err) => {
-            error!("Error while making weights: {err}");
-            return None;
+fn check_weight_length(shuffle: &ShuffleType, list_len: usize) -> Result<(), SelectError> {
+    fn check(list: &Vec<usize>, list_len: usize) -> Result<(), SelectError> {
+        if list.len() != list_len {
+            Err(SelectError::SizeError)
+        } else {
+            Ok(())
         }
-    };
-    let chosen = dist.sample(&mut rng);
-    Some(chosen)
+    }
+    match shuffle {
+        ShuffleType::None => Ok(()),
+        ShuffleType::TrueRandom => Ok(()),
+        ShuffleType::WeightedRandom(vec) => check(vec, list_len),
+        ShuffleType::WeightedDefault(vec) => check(vec, list_len),
+        ShuffleType::WeightedRandomWithDefault(vec, vec1) => {
+            check(vec, list_len)?;
+            check(vec1, list_len)
+        }
+    }
 }
 
 pub trait RandTrack {
     fn gen_range(&mut self, end: usize) -> usize;
-    fn select_weights(&mut self, weights: &[usize]) -> Option<usize>;
+    fn select_weights(&mut self, weights: &[usize]) -> Result<usize, WeightedError>;
 }
 
 impl<R> RandTrack for R
@@ -161,122 +350,10 @@ where
         self.gen_range(0..end)
     }
 
-    fn select_weights(&mut self, weights: &[usize]) -> Option<usize> {
-        select_weights(weights, self)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    struct MockRand {
-        current: usize,
-        increment: usize,
-    }
-    impl RandTrack for MockRand {
-        fn gen_range(&mut self, end: usize) -> usize {
-            let chosen = self.current % end;
-            self.current += self.increment;
-            chosen
-        }
-
-        fn select_weights(&mut self, weights: &[usize]) -> Option<usize> {
-            let max = weights.iter().max()?;
-            for (i, x) in weights.iter().enumerate() {
-                if x == max {
-                    return Some(i);
-                }
-            }
-            None
-        }
-    }
-
-    fn test_queue() -> VecDeque<QueueItem> {
-        [
-            "Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight",
-        ]
-        .iter()
-        .map(|s| QueueItem::Track(PathBuf::from(s)))
-        .collect()
-    }
-
-    fn simple_rand() -> MockRand {
-        MockRand {
-            current: 1,
-            increment: 1,
-        }
-    }
-
-    fn path(str: &str) -> PathBuf {
-        PathBuf::from(str)
-    }
-
-    #[test]
-    fn test_none_one() {
-        let mut list = test_queue();
-        let mut options = QueueOptions {
-            shuffle_type: ShuffleType::None,
-            repeat: false,
-            selected: None,
-        };
-        let mut rng = simple_rand();
-        let result = get_track_from_list(&mut list, &mut options, &mut rng);
-        assert_eq!(result, Some(path("Zero")));
-        let result = get_track_from_list(&mut list, &mut options, &mut rng);
-        assert_eq!(result, Some(path("One")));
-        let result = get_track_from_list(&mut list, &mut options, &mut rng);
-        assert_eq!(result, Some(path("Two")));
-    }
-
-    #[test]
-    fn test_none_two() {
-        let mut list = test_queue();
-        let mut options = QueueOptions {
-            shuffle_type: ShuffleType::None,
-            repeat: false,
-            selected: None,
-        };
-        let mut rng = simple_rand();
-        get_track_from_list(&mut list, &mut options, &mut rng);
-        get_track_from_list(&mut list, &mut options, &mut rng);
-        get_track_from_list(&mut list, &mut options, &mut rng);
-        let mut left = test_queue();
-        left.drain(..3);
-        assert_eq!(list, left)
-    }
-
-    #[test]
-    fn test_none_three() {
-        let mut list = test_queue();
-        let mut options = QueueOptions {
-            shuffle_type: ShuffleType::None,
-            repeat: true,
-            selected: None,
-        };
-        let mut rng = simple_rand();
-        get_track_from_list(&mut list, &mut options, &mut rng);
-        get_track_from_list(&mut list, &mut options, &mut rng);
-        get_track_from_list(&mut list, &mut options, &mut rng);
-        let left = test_queue();
-        assert_eq!(list, left);
-        assert_eq!(options.selected, Some(2))
-    }
-
-    #[test]
-    fn test_true_random_one() {
-        let mut list = test_queue();
-        let mut options = QueueOptions {
-            shuffle_type: ShuffleType::TrueRandom,
-            repeat: true,
-            selected: None,
-        };
-        let mut rng = simple_rand();
-        get_track_from_list(&mut list, &mut options, &mut rng);
-        get_track_from_list(&mut list, &mut options, &mut rng);
-        get_track_from_list(&mut list, &mut options, &mut rng);
-        let left = test_queue();
-        assert_eq!(list, left);
-        assert_eq!(options.selected, Some(3))
+    fn select_weights(&mut self, weights: &[usize]) -> Result<usize, WeightedError> {
+        // select_weights(weights, self)
+        let dist = WeightedIndex::new(weights)?;
+        let chosen = dist.sample(self);
+        Ok(chosen)
     }
 }

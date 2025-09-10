@@ -1,135 +1,39 @@
-use std::{collections::VecDeque, fmt::Display, path::PathBuf};
+use std::{
+    collections::VecDeque,
+    fmt::{Debug, Display},
+    path::PathBuf,
+};
 
+const DEPTH_LIMIT: usize = 10;
+
+pub mod queue_items;
 mod select_track;
 
+use log::warn;
+// use entity::{artist, release, track, track_location};
+use queue_items::{QueueItem, QueueTrack};
 use rand::thread_rng;
-pub use select_track::get_track_from_item;
-use select_track::get_track_from_list;
+// pub use select_track::get_track_from_item;
+// use select_track::get_track_from_list;
 
 /// Struct that will play things next
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Debug)]
 pub struct Queue {
     pub(crate) queue_items: VecDeque<QueueItem>,
-    //TODO: add history size
-    played_items: VecDeque<PathBuf>,
+    played_items: VecDeque<QueueItem>,
+    max_history: usize,
     pub queue_options: QueueOptions,
     pub repeat_current: bool,
     pub(crate) current_track: Option<PathBuf>,
-}
-
-#[derive(Clone, PartialEq, Debug)]
-pub enum QueueItem {
-    Track(PathBuf),
-    PlayList(VecDeque<QueueItem>, QueueOptions),
-    Album(VecDeque<PathBuf>, QueueOptions),
-}
-
-impl QueueItem {
-    pub fn flatten(self) -> VecDeque<PathBuf> {
-        match self {
-            QueueItem::Track(track) => [track].into(),
-            QueueItem::PlayList(playlist, _) => {
-                playlist.into_iter().flat_map(|i| i.flatten()).collect()
-            }
-            QueueItem::Album(album, _) => album,
-        }
-    }
-
-    pub fn count(&self) -> u32 {
-        match self {
-            QueueItem::Track(_) => 1,
-            QueueItem::PlayList(playlist, _) => playlist.iter().map(|x| x.count()).sum(),
-            QueueItem::Album(album, _) => album.len() as u32,
-        }
-    }
-
-    /// Should return if a item is fully played
-    pub fn is_empty(&self) -> bool {
-        match self {
-            // if a track is selected than it has been played
-            QueueItem::Track(_) => true,
-            QueueItem::PlayList(playlist, options) => {
-                if playlist.is_empty() {
-                    return true;
-                }
-                // we always repeat so we are never empty
-                if options.repeat {
-                    return false;
-                }
-                // We have 1 item left, if that is empty we are also empty
-                if playlist.len() == 1 {
-                    return playlist[0].is_empty();
-                }
-                false
-            }
-            QueueItem::Album(album, options) => {
-                if album.is_empty() {
-                    return true;
-                }
-                // we always repeat so we are never empty
-                if options.repeat {
-                    return false;
-                }
-                if album.len() == 1 {
-                    return true;
-                }
-                false
-            }
-        }
-    }
-
-    pub fn get_selected(&self) -> Option<PathBuf> {
-        match self {
-            QueueItem::Track(track) => Some(track.clone()),
-            QueueItem::PlayList(playlist, options) => {
-                let item = playlist.get(options.selected?)?;
-                item.get_selected()
-            }
-            QueueItem::Album(album, options) => album.get(options.selected?).cloned(),
-        }
-    }
-
-    /// Set QueueOptions only for this item, not the children
-    pub fn set_queue_options(self, options: QueueOptions) -> Self {
-        match self {
-            QueueItem::PlayList(vec_deque, _) => QueueItem::PlayList(vec_deque, options),
-            QueueItem::Album(vec_deque, _) => QueueItem::Album(vec_deque, options),
-            track => track,
-        }
-    }
-
-    /// Set QueueOptions for this item, and the children
-    pub fn set_queue_options_rec(self, options: QueueOptions) -> Self {
-        match self {
-            QueueItem::PlayList(vec_deque, _) => QueueItem::PlayList(
-                vec_deque
-                    .into_iter()
-                    .map(|x| x.set_queue_options_rec(options.clone()))
-                    .collect(),
-                options,
-            ),
-            QueueItem::Album(vec_deque, _) => QueueItem::Album(vec_deque, options),
-            track => track,
-        }
-    }
-
-    pub fn switch_shuffle(&mut self, new_shuffle: ShuffleType) -> Result<(), ShuffleError> {
-        match self {
-            QueueItem::Track(_) => Ok(()),
-            QueueItem::PlayList(playlist, options) => {
-                switch_shuffle(&mut options.shuffle_type, new_shuffle, playlist.len())
-            }
-            QueueItem::Album(album, options) => {
-                switch_shuffle(&mut options.shuffle_type, new_shuffle, album.len())
-            }
-        }
-    }
+    next_up: VecDeque<QueueItem>,
+    // nothing to do with next_up
+    next_id: usize,
 }
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct QueueOptions {
     pub shuffle_type: ShuffleType,
-    pub repeat: bool,
+    pub stop_condition: StopCondition,
     pub selected: Option<usize>,
 }
 
@@ -137,14 +41,22 @@ impl Default for QueueOptions {
     fn default() -> Self {
         Self {
             shuffle_type: ShuffleType::None,
-            repeat: false,
+            stop_condition: StopCondition::None,
             selected: None,
         }
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+impl QueueOptions {
+    /// This is the same as default
+    fn new() -> Self {
+        Self::default()
+    }
+}
+
+#[derive(Clone, PartialEq, Debug, Default)]
 pub enum ShuffleType {
+    #[default]
     None,
     TrueRandom,
     /// List of weights to avoid duplicates
@@ -154,6 +66,19 @@ pub enum ShuffleType {
     /// List of weights with defaults that don't change
     /// and weights to avoid duplicates
     WeightedRandomWithDefault(Vec<usize>, Vec<usize>),
+}
+
+#[derive(Clone, PartialEq, Debug, Default)]
+pub enum StopCondition {
+    #[default]
+    /// Stop at he end of the queue
+    EndOfList,
+    /// Loop at the end of the list
+    None,
+    /// Stop after playing this amount of tracks
+    AmountTracks(usize),
+    /// Stop playing after this the time in mil elapsed
+    Time(u64),
 }
 
 impl ShuffleType {
@@ -220,31 +145,9 @@ fn switch_shuffle(
 
 impl Queue {
     pub fn new() -> Queue {
-        let queue_items = VecDeque::new();
-        let played_items = VecDeque::new();
-        let queue_options = Default::default();
-        let repeat_current = false;
-        Queue {
-            queue_items,
-            played_items,
-            queue_options,
-            repeat_current,
-            current_track: None,
-        }
-    }
-
-    ///TODO: make sure all shuffle types work
-    pub(crate) fn next_track(&mut self) -> Option<PathBuf> {
-        if self.repeat_current && self.current_track.is_some() {
-            return self.current_track.clone();
-        }
-        let options = &mut self.queue_options;
-
-        if let Some(track) = self.current_track.clone() {
-            self.played_items.push_front(track);
-        }
-        self.current_track = get_track_from_list(&mut self.queue_items, options, &mut thread_rng());
-        self.current_track.clone()
+        // DON'T use default in new if default in turn uses new
+        // this causes a funny stack overflow :3
+        Default::default()
     }
 
     pub(crate) fn play_queue_item(
@@ -252,9 +155,31 @@ impl Queue {
         queue_item: QueueItem,
         flatten: bool,
     ) -> Option<PathBuf> {
-        self.queue_items.clear();
+        self.clear_queue();
         self.append_queue_item(queue_item, flatten);
-        self.next_track()
+        self.current_track = self.next_track();
+        self.current_track.clone()
+    }
+
+    // Remove everything that is in the queue
+    // NOT the next items, or the played items
+    pub fn clear_queue(&mut self) {
+        self.queue_items.clear();
+        self.queue_options = Default::default();
+    }
+
+    pub fn clear_next_items(&mut self) {
+        self.next_up.clear();
+    }
+
+    pub fn clear_history(&mut self) {
+        self.played_items.clear();
+    }
+
+    pub fn reset_queue(&mut self) {
+        self.clear_queue();
+        self.clear_next_items();
+        self.clear_history();
     }
 
     pub fn switch_shuffle(&mut self, new_shuffle: ShuffleType) -> Result<(), ShuffleError> {
@@ -277,39 +202,26 @@ impl Queue {
         &self.queue_items
     }
 
-    pub fn played_items(&self) -> &VecDeque<PathBuf> {
+    pub fn played_items(&self) -> &VecDeque<QueueItem> {
         &self.played_items
-    }
-
-    pub fn append_track(&mut self, track: PathBuf) {
-        self.queue_items.push_back(QueueItem::Track(track));
     }
 
     pub fn current_track(&self) -> &Option<PathBuf> {
         &self.current_track
     }
 
-    pub fn append_playlist(&mut self, playlist: VecDeque<QueueItem>, options: QueueOptions) {
-        self.queue_items
-            .push_back(QueueItem::PlayList(playlist, options))
-    }
-
-    pub fn append_album(&mut self, album: VecDeque<PathBuf>, options: QueueOptions) {
-        self.queue_items.push_back(QueueItem::Album(album, options))
-    }
-
-    pub fn append_queue_item(&mut self, item: QueueItem, flatten: bool) {
+    pub fn append_queue_item<I>(&mut self, item: I, flatten: bool)
+    where
+        I: Into<QueueItem>,
+    {
+        let item: QueueItem = item.into();
         if flatten {
             let tracks = item.flatten();
             for track in tracks {
-                self.append_track(track);
+                self.queue_items.push_back(track.into());
             }
         } else {
-            match item {
-                QueueItem::Track(track) => self.append_track(track),
-                QueueItem::PlayList(playlist, options) => self.append_playlist(playlist, options),
-                QueueItem::Album(album, options) => self.append_album(album, options),
-            }
+            self.queue_items.push_back(item)
         }
     }
 
@@ -320,12 +232,30 @@ impl Queue {
             .into_iter()
             .flat_map(|i| i.flatten())
             .map(QueueItem::Track)
-            .collect()
+            .collect();
+        // INFO:
+        // make this an option, or think if this should happen at all
+        //
+        // self.played_items = self
+        //     .played_items
+        //     .into_iter()
+        //     .flat_map(|i| i.flatten())
+        //     .map(QueueItem::Track)
+        //     .collect()
     }
 }
 
 impl Default for Queue {
     fn default() -> Self {
-        Self::new()
+        Queue {
+            max_history: 128,
+            repeat_current: false,
+            current_track: None,
+            next_id: 0,
+            queue_items: VecDeque::new(),
+            played_items: VecDeque::new(),
+            queue_options: QueueOptions::default(),
+            next_up: Default::default(),
+        }
     }
 }

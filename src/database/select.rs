@@ -1,80 +1,141 @@
 use std::path::Path;
 
-use super::Library;
-use entity::{artist, genre, playlist, playlist_item, publisher, release, track, track_location};
-use log::{error, warn};
-use sea_orm::prelude::*;
-use sea_orm::EntityTrait;
+use crate::{
+    models::{Artist, Genre, Playlist, PlaylistItem, Publisher, Release, Track, TrackLocation},
+    schema::{artists, playlists, publishers, releases, track_locations, tracks},
+    struct_in_enum,
+};
 
-pub type Result<T, E = migration::DbErr> = std::result::Result<T, E>;
+use anyhow::{Context, Result};
+use log::error;
+use log::warn;
+
+use super::{Conn, Library};
+use diesel::{associations::HasTable, prelude::*};
+
+pub trait RelatedMany<C> {
+    fn models_related(&self, conn: &mut Conn) -> QueryResult<Vec<C>>;
+}
+pub trait Related<P> {
+    fn models_related(&self, conn: &mut Conn) -> QueryResult<Option<P>>;
+}
+// Implement relations because doing it with generics is pain
+macro_rules! impl_related {
+    ($($P:ident, $p:ident -> $C:ident),*) => {$(
+        // Release -> Vec<Track>
+        impl RelatedMany<$C> for $P {
+            fn models_related(&self, conn: &mut Conn) -> QueryResult<Vec<$C>> {
+                $C::belonging_to(self)
+                    .select($C::as_select())
+                    .load(conn)
+            }
+        }
+        // Track -> Option<Release>
+        impl Related<$P> for $C {
+            fn models_related(&self, conn: &mut Conn) -> QueryResult<Option<$P>> {
+                // inner join Track, Release. Only Select Release
+                $P::table()
+                    .inner_join($C::table())
+                    .filter(
+                        $p::id.eq(
+                            diesel::associations::BelongsTo::<$P>::foreign_key(self)
+                                .expect("No foreign key found"),
+                        ),
+                    )
+                    .select($P::as_select())
+                    // Get first result, or return None
+                    .first(conn).optional()
+            }
+        }
+    )*
+    };
+}
+
+impl_related!(
+    Release, releases -> Track,
+    Artist, artists -> Track,
+    Track, tracks -> Genre,
+    Track, tracks -> TrackLocation,
+    Artist, artists -> Release,
+    Publisher, publishers -> Release,
+    Release, releases -> PlaylistItem,
+    Track, tracks -> PlaylistItem,
+    Playlist, playlists -> PlaylistItem
+);
+
+pub trait GetAll: Sized {
+    fn get_all(conn: &mut Conn) -> QueryResult<Vec<Self>>;
+}
+
+macro_rules! impl_get_all {
+    ($($M:ident),*) => {$(
+        impl GetAll for $M {
+            fn get_all(conn: &mut Conn) -> QueryResult<Vec<Self>> {
+                $M::table().select($M::as_select()).load(conn)
+            }
+        }
+    )*
+    };
+}
+
+impl_get_all!(
+    Artist,
+    Genre,
+    Playlist,
+    PlaylistItem,
+    Publisher,
+    Release,
+    Track,
+    TrackLocation
+);
 
 impl Library {
-    pub async fn models_related<M, R>(&self, model: &M) -> Result<Vec<R::Model>>
+    pub fn models_related<P, C>(&mut self, model: &P) -> QueryResult<Vec<C>>
     where
-        M: ModelTrait,
-        R: EntityTrait,
-        M::Entity: Related<R>,
+        P: RelatedMany<C>,
     {
-        model
-            .find_related::<R>(R::default())
-            .all(&self.database)
-            .await
+        P::models_related(model, &mut self.database)
     }
 
-    pub async fn model_related<M, R>(&self, model: &M) -> Result<Option<R::Model>>
+    pub fn model_related<P, C>(&mut self, model: &C) -> QueryResult<Option<P>>
     where
-        M: ModelTrait,
-        R: EntityTrait,
-        M::Entity: Related<R>,
+        C: Related<P>,
     {
-        model
-            .find_related::<R>(R::default())
-            .one(&self.database)
-            .await
+        C::models_related(model, &mut self.database)
     }
 
-    pub async fn get_track(&self, path: &Path) -> Result<Option<track::Model>> {
+    pub fn get_track(&mut self, path: &Path) -> Result<Option<Track>> {
         let path = match path.canonicalize() {
             Ok(path) => path,
             Err(err) => {
-                error!(
-                    "Error canonicalizing path: {}\nerr: {}",
-                    path.display(),
-                    err
-                );
-                return Err(DbErr::Custom("Error canonicalizing path".into()));
+                return Err(err).context("Error canonicalizing path");
             }
         };
-        track_location::Entity::find_related()
-            .filter(track_location::Column::Path.eq(path.to_str()))
-            .one(&self.database)
-            .await
+        let path = path.to_string_lossy().into_owned();
+
+        Ok(Track::table()
+            .inner_join(TrackLocation::table())
+            .filter(track_locations::path.eq(&path))
+            .select(Track::as_select())
+            .first(&mut self.database)
+            .optional()?)
     }
 
-    pub async fn find_all<E>(&self) -> Result<Vec<E::Model>>
+    pub fn find_all<E>(&mut self) -> QueryResult<Vec<E>>
     where
-        E: EntityTrait,
+        E: GetAll,
     {
-        E::find().all(&self.database).await
-    }
-
-    pub async fn artist_discography(
-        &self,
-        artist: &artist::Model,
-    ) -> Result<Vec<(release::Model, Vec<track::Model>)>> {
-        artist
-            .find_related(release::Entity)
-            .find_with_related(track::Entity)
-            .all(&self.database)
-            .await
+        E::get_all(&mut self.database)
     }
 }
 
-pub enum PlaylistItem {
-    Track(track::Model),
-    Release(release::Model),
-    Playlist(playlist::Model),
+pub enum PlaylistItemType {
+    Track(Track),
+    Release(Release),
+    Playlist(Playlist),
 }
+struct_in_enum!(PlaylistItemType, impl_into_pli);
+impl_into_pli!(Track: Track, Release: Release, Playlist: Playlist);
 
 impl Library {
     /// Gets the playlist items from the database in a convenient format.
@@ -82,57 +143,46 @@ impl Library {
     /// A playlist is a recursive format and the places you would use it (UI)
     /// require that you transform it to your own types.
     /// Because of this you need to implement the recursive part yourself
-    pub async fn playlist(&self, playlist: playlist::Model) -> Result<Vec<PlaylistItem>> {
-        let pl_items = playlist_item::Entity::find()
-            .filter(playlist_item::Column::PlaylistId.eq(playlist.id))
-            .all(&self.database)
-            .await?;
+    pub fn playlist(&mut self, playlist: &Playlist) -> Result<Vec<PlaylistItemType>> {
+        let pl_items = self.models_related::<_, PlaylistItem>(playlist)?;
 
         let mut items = vec![];
 
         for item in pl_items {
+            // Get model by id and check if it exists, else we continue
             macro_rules! get_model {
                 ($id:expr, $entity:ident, $name:literal) => {
-                    match self
-                        .check_id::<$entity::Entity>($id, $name, item.id)
-                        .await?
-                    {
+                    match self.check_id::<$entity>($id, $name, item.id)? {
                         Some(model) => model.into(),
                         None => continue,
                     }
                 };
             }
 
-            let item = match item.r#type {
+            let item: PlaylistItemType = match item.item_type {
                 // Track
-                0 => get_model!(item.item_track_id, track, "track"),
+                0 => get_model!(item.item_track_id, Track, "track"),
                 // Release
-                1 => get_model!(item.item_release_id, release, "release"),
+                1 => get_model!(item.item_release_id, Release, "release"),
                 // Playlist
-                2 => get_model!(item.item_playlist_id, playlist, "playlist"),
+                2 => get_model!(item.item_playlist_id, Playlist, "playlist"),
                 _ => {
                     error!(
                         "Wrong type playlist item in database, type:{}, id:{}",
-                        item.r#type, item.id
+                        item.item_type, item.id
                     );
                     continue;
                 }
             };
-            // add playlist item to result
             items.push(item)
         }
         Ok(items)
     }
 
     /// Check id and log problems with it
-    async fn check_id<E>(
-        &self,
-        id: Option<i32>,
-        name: &str,
-        item_id: i32,
-    ) -> Result<Option<E::Model>>
+    fn check_id<E>(&mut self, id: Option<i32>, name: &str, item_id: i32) -> Result<Option<E>>
     where
-        E: EntityTrait + NormalId,
+        E: NormalId,
     {
         let id = match id {
             Some(id) => id,
@@ -144,7 +194,7 @@ impl Library {
                 return Ok(None);
             }
         };
-        match self.from_id::<E>(id).await? {
+        match self.model_from_id::<E>(id)? {
             Some(model) => Ok(Some(model)),
             None => {
                 warn!(
@@ -156,47 +206,38 @@ impl Library {
         }
     }
 
-    pub(crate) async fn from_id<E>(&self, id: i32) -> Result<Option<E::Model>>
+    #[allow(private_bounds)]
+    pub(crate) fn model_from_id<E>(&mut self, id: i32) -> QueryResult<Option<E>>
     where
-        E: EntityTrait + NormalId,
+        E: NormalId,
     {
-        E::from_id(id).one(&self.database).await
+        E::from_id(id, self)
     }
 }
 
-macro_rules! impl_into_pli {
-    ($($i:ident, $enum:ident), +) => {$(
-        impl Into<PlaylistItem> for $i::Model {
-            fn into(self) -> PlaylistItem {
-                PlaylistItem::$enum(self)
-            }
-        }
-    )+
-    };
-}
-impl_into_pli!(track, Track, release, Release, playlist, Playlist);
-
-trait NormalId: EntityTrait {
-    fn from_id(id: i32) -> Select<Self>;
+trait NormalId: Sized {
+    fn from_id(id: i32, library: &mut Library) -> QueryResult<Option<Self>>;
 }
 
 macro_rules! impl_normal_id {
     ($($i:ident),+) => {$(
-        impl NormalId for $i::Entity {
-            fn from_id(id: i32) -> Select<Self> {
-                Self::find().filter($i::Column::Id.eq(id))
+        impl NormalId for $i {
+            fn from_id(id: i32, library: &mut Library) -> QueryResult<Option<Self>> {
+                $i::table()
+                    .find(id)
+                    .first(&mut library.database)
+                    .optional()
             }
         }
-        )+
-    };
+    )+};
 }
 
 impl_normal_id!(
-    artist,
-    genre,
-    playlist,
-    playlist_item,
-    publisher,
-    release,
-    track
+    Artist,
+    Genre,
+    Playlist,
+    PlaylistItem,
+    Publisher,
+    Release,
+    Track
 );

@@ -1,148 +1,151 @@
-use std::{collections::VecDeque, fmt::Display, path::PathBuf};
+use std::{
+    collections::VecDeque,
+    fmt::Display,
+};
 
-use entity::{artist, release, track, track_location};
-use log::{error, warn};
-use sea_orm::prelude::*;
+use log::{debug, error, info};
 
-use crate::queue::{QueueItem, QueueOptions};
+use crate::{
+    models::{Artist, Playlist, Release, Track},
+    queue::queue_items::{FromDB, QueueAlbum, QueueItem, QueuePlaylist, QueueTrack},
+};
 
 use super::Library;
 
 pub trait GetContext {
-    // get the context when this item is play on its own
-    fn get_context(
-        &self,
-        library: &Library,
-    ) -> impl std::future::Future<Output = TrackResult<QueueItem>> + Send;
+    // Get the context when this item is play on its own
+    fn get_context(&self, library: &mut Library) -> TrackResult<QueueItem>;
+}
+
+macro_rules! impl_get_context {
+    ($($from:ident -> $to:ident),*) => {$(
+        impl GetContext for $from
+        {
+            fn get_context(&self, library: &mut Library) -> TrackResult<QueueItem> {
+                $to::from_db(self.clone(), library).map(|m| m.into())
+            }
+        }
+    )*};
+}
+
+impl_get_context!(Track -> QueueTrack, Release -> QueueAlbum, Playlist -> QueuePlaylist);
+
+pub trait GetContextList {
     // get the context when this item is played from a list of items
     fn get_context_list(
         self_list: Vec<&Self>,
         index: usize,
-        library: &Library,
-    ) -> impl std::future::Future<Output = TrackResult<QueueItem>> + Send;
+        library: &mut Library,
+    ) -> TrackResult<QueueItem>;
 }
 
-impl GetContext for track::Model {
-    async fn get_context(&self, library: &Library) -> TrackResult<QueueItem> {
-        match library
-            .model_related::<_, track_location::Entity>(self)
-            .await?
-        {
-            Some(location) => Ok(QueueItem::Track(PathBuf::from(location.path))),
-            None => {
-                warn!("Could not find path for {}", self.name);
-                Err(TrackError::NoTrackLocation)
-            }
-        }
-    }
-
-    async fn get_context_list(
+impl GetContextList for Track {
+    fn get_context_list(
         self_list: Vec<&Self>,
         index: usize,
-        library: &Library,
+        library: &mut Library,
     ) -> TrackResult<QueueItem> {
+        debug!("list: {:?}", self_list);
         let mut result = VecDeque::new();
         for track in self_list.into_iter() {
-            match track.get_context(library).await {
+            match track.get_context(library) {
                 Ok(location) => result.push_back(location),
                 Err(err) => match err {
-                    // a track_location missing is not fatal
-                    TrackError::NoTrackLocation => (),
-                    TrackError::DbErr(db_err) => return Err(db_err.into()),
+                    // A track_location missing is not fatal
+                    ContextError::NoResult => info!("No track location for: {:?}", track.name),
+                    ContextError::DbErr(db_err) => return Err(db_err.into()),
                     // can't happen
-                    TrackError::WrongInput(err) => error!("WrongInput: {err}"),
+                    ContextError::IndexOutOfBounds(_) => {
+                        error!("Index out of bounds while getting track")
+                    }
+                    ContextError::MaxDepthReached => error!("Max depth reached"),
                 },
             }
         }
         if index > result.len() {
-            error!("index out of bounds while getting context");
-            return Err(TrackError::WrongInput("index out of bounds".into()));
+            return Err(ContextError::IndexOutOfBounds(result.len()));
         }
         result.rotate_left(index);
-        Ok(QueueItem::PlayList(result, QueueOptions::default()))
+        Ok(QueuePlaylist::from_items(result).into())
     }
 }
 
-macro_rules! standerd_list_context {
-    () => {
-        async fn get_context_list(
-            self_list: Vec<&Self>,
-            index: usize,
-            library: &Library,
-        ) -> TrackResult<QueueItem> {
-            if let Some(item) = self_list.get(index) {
-                item.get_context(library).await
-            } else {
-                error!("index out of bounds while getting context");
-                Err(TrackError::WrongInput("index out of bounds".into()))
-            }
-        }
-    };
-}
-
-impl GetContext for release::Model {
-    async fn get_context(&self, library: &Library) -> TrackResult<QueueItem> {
-        let tracks = self
-            .find_related(track::Entity)
-            .find_also_related(track_location::Entity)
-            .all(&library.database)
-            .await?;
+impl GetContext for Artist {
+    fn get_context(&self, library: &mut Library) -> TrackResult<QueueItem> {
+        let albums = library.models_related::<_, Release>(self)?;
         let mut result = VecDeque::new();
-        for (track, option) in tracks {
-            match option {
-                Some(location) => result.push_back(PathBuf::from(location.path)),
-                None => warn!("Could not find path for {}", track.name),
+        for album in albums {
+            match album.get_context(library) {
+                Ok(album) => result.push_back(album),
+                Err(err) => match err {
+                    ContextError::DbErr(db_err) => return Err(db_err.into()),
+                    ContextError::IndexOutOfBounds(_) => {
+                        error!("Index out of bounds while getting album")
+                    }
+                    _ => (),
+                },
             }
         }
-        Ok(QueueItem::Album(result, QueueOptions::default()))
+        Ok(QueuePlaylist::from_items(result).into())
     }
-    standerd_list_context!();
 }
 
-impl GetContext for artist::Model {
-    async fn get_context(&self, library: &Library) -> TrackResult<QueueItem> {
-        let discography = self
-            .find_related(release::Entity)
-            .all(&library.database)
-            .await?;
-        let mut result = vec![];
-        for release in discography.into_iter() {
-            result.push(release.get_context(library).await);
+trait DefaultListContext {}
+impl DefaultListContext for Artist {}
+impl DefaultListContext for Release {}
+impl DefaultListContext for Playlist {}
+
+impl<T> GetContextList for T
+where
+    T: GetContext + DefaultListContext,
+{
+    fn get_context_list(
+        self_list: Vec<&Self>,
+        index: usize,
+        library: &mut Library,
+    ) -> TrackResult<QueueItem> {
+        if let Some(item) = self_list.get(index) {
+            item.get_context(library)
+        } else {
+            Err(ContextError::IndexOutOfBounds(self_list.len()))
         }
-        result
-            .into_iter()
-            .collect::<TrackResult<VecDeque<_>>>()
-            .map(|vec| QueueItem::PlayList(vec, QueueOptions::default()))
     }
-    standerd_list_context!();
 }
 
-pub type TrackResult<T, E = TrackError> = std::result::Result<T, E>;
+pub type TrackResult<T, E = ContextError> = std::result::Result<T, E>;
 
 #[derive(Debug)]
-pub enum TrackError {
-    /// There was no track_location for this track in the database
-    NoTrackLocation,
-    /// The input was faulty
-    WrongInput(String),
+pub enum ContextError {
+    /// The Depth limit was reached when traversing a playlist
+    MaxDepthReached,
+    /// There was no result from the database for something that was needed to get the context
+    NoResult,
+    /// The index that was given is out of bounds,
+    /// number is the length of the list that was wrongly indexed
+    /// happen
+    IndexOutOfBounds(usize),
     /// The database gave an error
-    DbErr(migration::DbErr),
+    DbErr(diesel::result::Error),
 }
 
-impl Display for TrackError {
+impl Display for ContextError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TrackError::NoTrackLocation => write!(f, "No Track Location Found"),
-            TrackError::WrongInput(str) => write!(f, "Wrong Input was given: \"{str}\""),
-            TrackError::DbErr(db_err) => write!(f, "DataBase Error: \"{db_err}\""),
+            ContextError::MaxDepthReached => write!(f, "Max Depth Reached"),
+            ContextError::NoResult => write!(f, "No context found"),
+            ContextError::IndexOutOfBounds(size) => write!(
+                f,
+                "The index was out of bounds: actual size of list: \"{size}\""
+            ),
+            ContextError::DbErr(db_err) => write!(f, "DataBase Error: \"{db_err}\""),
         }
     }
 }
 
-impl std::error::Error for TrackError {}
+impl std::error::Error for ContextError {}
 
-impl From<migration::DbErr> for TrackError {
-    fn from(value: migration::DbErr) -> Self {
+impl From<diesel::result::Error> for ContextError {
+    fn from(value: diesel::result::Error) -> Self {
         Self::DbErr(value)
     }
 }

@@ -6,7 +6,6 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io::BufReader;
-use std::ops::SubAssign;
 
 use anyhow::{anyhow, Result};
 use byteorder::{ByteOrder, LittleEndian};

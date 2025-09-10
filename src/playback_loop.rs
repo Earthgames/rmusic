@@ -3,7 +3,7 @@ use std::sync::mpsc::Receiver;
 use cpal::Sample;
 use log::{error, info};
 
-use crate::{playback::PlaybackDaemon, queue::QueueItem};
+use crate::{playback::PlaybackDaemon, queue::queue_items::QueueItem};
 
 #[derive(Debug)]
 pub enum PlaybackAction {

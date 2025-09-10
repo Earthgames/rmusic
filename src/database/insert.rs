@@ -1,221 +1,163 @@
-use anyhow::{bail, Context, Result};
-use entity::{artist, genre, publisher, release, track, track_location};
-use log::{debug, info};
-use migration::OnConflict;
-use sea_orm::prelude::*;
-use sea_orm::{EntityTrait, QueryFilter, Set};
+use chrono::NaiveDate;
+use diesel::{prelude::*, result::Error};
+use log::info;
+
+use crate::schema::{artists, genres, publishers, releases, track_locations, tracks};
 
 use super::Library;
 
+/// Macro to make inserts if they don't exist easier
+/// self: &mut Library,
+/// table: schema module,
+/// name: String(name of module/table),
+/// name_value: String(name of thing being inserted),
+/// values,+ : all things to select/filter on like: hair::color.eq("brown")
+/// a ;
+/// select => insert;* : for when the select and insert are different useful for Option
+macro_rules! insert_if_not_exist {
+    ($self:expr, $table:ident, $name:expr, $name_value:expr, $($value:expr),+ ; $($select:expr => $insert:expr;)*) => {
+        Ok(match $table::table
+            $(.filter($value))+
+            $(.filter($select))*
+            .select($table::id)
+            .get_result(&mut $self.database)
+        {
+            Ok(id) => id,
+            Err(err) => {
+                if let Error::NotFound = err {
+                    let id = diesel::insert_into($table::table)
+                        .values(($($value),+ $(,$insert)* ))
+                        .returning($table::id)
+                        .get_result(&mut $self.database)?;
+                    info!("Created {}: {}", $name, $name_value);
+                    id
+                } else {
+                    return Err(err);
+                }
+            }
+        })
+    };
+}
+
 impl Library {
-    pub async fn insert_publisher_if_not_exist(
-        &self,
+    pub fn insert_publisher_if_not_exist(
+        &mut self,
         publisher: String,
         about: String,
-    ) -> Result<i32> {
-        let publisher_data = publisher::ActiveModel {
-            id: Default::default(),
-            name: Set(publisher.clone()),
-            about: Set(about),
-        };
-        Ok(
-            match publisher::Entity::insert(publisher_data)
-                .on_conflict_do_nothing()
-                .exec(&self.database)
-                .await
-            {
-                Ok(sea_orm::TryInsertResult::Inserted(publisher_insert)) => {
-                    info!("Created publisher: {publisher}");
-                    publisher_insert.last_insert_id
-                }
-                Ok(_) | Err(DbErr::Exec(_)) => {
-                    match publisher::Entity::find()
-                        .filter(publisher::Column::Name.eq(&publisher))
-                        .one(&self.database)
-                        .await
-                        .context("While finding publisher")?
-                    {
-                        Some(publisher) => publisher.id,
-                        None => bail!(
-                            "Could not find publisher ({publisher}) after trying to insert it"
-                        ),
-                    }
-                }
-                Err(err) => return Err(err).context("While inserting publisher"),
-            },
+    ) -> QueryResult<i32> {
+        insert_if_not_exist!(
+            self,
+            publishers,
+            "publisher",
+            publisher,
+            publishers::name.eq(&publisher),
+            publishers::about.eq(&about);
         )
     }
 
-    pub async fn insert_artist_if_not_exist(&self, artist: String, about: String) -> Result<i32> {
-        let artist_data = artist::ActiveModel {
-            id: Default::default(),
-            name: Set(artist.clone()),
-            about: Set(about),
-        };
-        Ok(
-            match artist::Entity::insert(artist_data)
-                .on_conflict_do_nothing()
-                .exec(&self.database)
-                .await
-            {
-                Ok(sea_orm::TryInsertResult::Inserted(artist_insert)) => {
-                    info!("Created artist: {}", artist);
-                    artist_insert.last_insert_id
-                }
-                Ok(_) | Err(DbErr::Exec(_)) => {
-                    match artist::Entity::find()
-                        .filter(artist::Column::Name.eq(&artist))
-                        .one(&self.database)
-                        .await
-                        .context("While finding artist")?
-                    {
-                        Some(artist) => artist.id,
-                        None => bail!("Could not find artist ({artist}) after trying to insert it"),
-                    }
-                }
-                Err(err) => return Err(err).context("While inserting artist"),
-            },
+    pub fn insert_artist_if_not_exist(
+        &mut self,
+        artist: String,
+        about: String,
+    ) -> QueryResult<i32> {
+        insert_if_not_exist!(
+            self,
+            artists,
+            "artist",
+            artist,
+            artists::name.eq(&artist),
+            artists::about.eq(&about);
         )
     }
 
-    pub async fn insert_track_location_if_not_exist(
-        &self,
-        path: String,
-        track_id: i32,
-    ) -> Result<()> {
-        let track_location_data = track_location::ActiveModel {
-            path: Set(path.clone()),
-            track_id: Set(track_id),
-        };
-        track_location::Entity::insert(track_location_data)
-            .on_conflict(
-                OnConflict::column(track_location::Column::TrackId)
-                    .update_column(track_location::Column::TrackId)
-                    .to_owned(),
-            )
-            .do_nothing()
-            .exec(&self.database)
-            .await
-            .context("While inserting track_location")?;
-        info!("Created or updated track_location: {}", path);
-        Ok(())
-    }
-
-    pub async fn insert_genres_if_not_exist(&self, name: String, track_id: i32) -> Result<()> {
-        let genre_data = genre::ActiveModel {
-            id: Default::default(),
-            name: Set(name.clone()),
-            track_id: Set(track_id),
-        };
-        match genre::Entity::insert(genre_data)
-            .do_nothing()
-            .exec(&self.database)
-            .await
-            .context("While inserting genre")?
-        {
-            sea_orm::TryInsertResult::Empty => (),
-            sea_orm::TryInsertResult::Conflicted => debug!("Genre already existed for this track"),
-            sea_orm::TryInsertResult::Inserted(_) => {
-                info!("Created genre: {}, for tack_id: {}", name, track_id)
-            }
-        }
-        Ok(())
-    }
-
-    pub async fn insert_release_if_not_exist(
-        &self,
+    pub fn insert_release_if_not_exist(
+        &mut self,
         name: String,
-        r#type: Option<String>,
-        date: Date,
+        release_type: Option<String>,
+        date: NaiveDate,
         artist_id: i32,
         publisher_id: Option<i32>,
-    ) -> Result<i32> {
-        let release_data = release::ActiveModel {
-            id: Default::default(),
-            name: Set(name.clone()),
-            r#type: Set(r#type.clone()),
-            date: Set(date),
-            artist_id: Set(artist_id),
-            publisher_id: Set(publisher_id),
-        };
-        Ok(
-            match release::Entity::insert(release_data)
-                .on_conflict_do_nothing()
-                .exec(&self.database)
-                .await
-            {
-                Ok(sea_orm::TryInsertResult::Inserted(release_insert)) => {
-                    info!("Created release: {name}");
-                    release_insert.last_insert_id
-                }
-                Ok(_) | Err(DbErr::Exec(_)) => {
-                    match release::Entity::find()
-                        .filter(release::Column::Name.eq(&name))
-                        .filter(match r#type {
-                            Some(release_type) => release::Column::Type.eq(release_type),
-                            None => release::Column::Type.is_null(),
-                        })
-                        .filter(release::Column::Date.eq(date))
-                        .filter(release::Column::ArtistId.eq(artist_id))
-                        .one(&self.database)
-                        .await?
-                    {
-                        Some(release) => release.id,
-                        None => {
-                            bail!("Could not find release ({name}) after trying to insert it")
-                        }
-                    }
-                }
-                Err(err) => bail!("Could not insert release into database: {err}"),
-            },
-        )
+    ) -> QueryResult<i32> {
+        // Could be better but idk, don't want to write a whole macro for this
+        match publisher_id {
+            Some(publisher_id) => insert_if_not_exist!(
+                self,
+                releases,
+                "release",
+                name,
+                releases::name.eq(&name),
+                releases::release_type.eq(&release_type),
+                releases::date.eq(date),
+                releases::artist_id.eq(artist_id),
+                releases::publisher_id.eq(publisher_id);
+            ),
+            None => insert_if_not_exist!(
+                self,
+                releases,
+                "release",
+                name,
+                releases::name.eq(&name),
+                releases::release_type.eq(&release_type),
+                releases::date.eq(date),
+                releases::artist_id.eq(artist_id);
+                releases::publisher_id.is_null() => releases::publisher_id.eq(publisher_id);
+            ),
+        }
     }
 
-    pub async fn insert_track_if_not_exist(
-        &self,
+    pub fn insert_track_if_not_exist(
+        &mut self,
         name: String,
-        date: Date,
+        date: NaiveDate,
         number: i32,
         duration: i32,
         artist_id: i32,
         release_id: i32,
-    ) -> Result<i32> {
-        let track_data = track::ActiveModel {
-            name: Set(name.clone()),
-            date: Set(date),
-            number: Set(number),
-            duration: Set(duration),
-            artist_id: Set(artist_id),
-            release_id: Set(release_id),
-            ..Default::default()
-        };
-        Ok(
-            match track::Entity::insert(track_data)
-                .on_conflict_do_nothing()
-                .exec(&self.database)
-                .await
-            {
-                Ok(sea_orm::TryInsertResult::Inserted(track_insert)) => {
-                    info!("Created track {}", name);
-                    track_insert.last_insert_id
-                }
-                Ok(_) | Err(DbErr::Exec(_)) => {
-                    match track::Entity::find()
-                        .filter(track::Column::Name.eq(&name))
-                        .filter(track::Column::Date.eq(date))
-                        .filter(track::Column::Number.eq(number))
-                        .filter(track::Column::Duration.eq(duration))
-                        .filter(track::Column::ArtistId.eq(artist_id))
-                        .filter(track::Column::ReleaseId.eq(release_id))
-                        .one(&self.database)
-                        .await?
-                    {
-                        Some(track) => track.id,
-                        None => bail!("Could not find track ({name}) after trying to insert it"),
-                    }
-                }
-                Err(err) => return Err(err).context("While inserting track"),
-            },
+    ) -> QueryResult<i32> {
+        insert_if_not_exist!(
+            self,
+            tracks,
+            "track",
+            name,
+            tracks::name.eq(&name),
+            tracks::number.eq(number),
+            tracks::duration.eq(duration),
+            tracks::date.eq(date),
+            tracks::artist_id.eq(artist_id),
+            tracks::release_id.eq(release_id);
         )
+    }
+
+    pub fn insert_track_location_if_not_exist(
+        &mut self,
+        path: String,
+        track_id: i32,
+    ) -> QueryResult<()> {
+        let opt = diesel::insert_into(track_locations::table)
+            .values((
+                track_locations::path.eq(&path),
+                track_locations::track_id.eq(track_id),
+            ))
+            .on_conflict(track_locations::track_id)
+            .do_update()
+            .set(track_locations::track_id.eq(track_id))
+            .execute(&mut self.database)
+            .optional()?;
+        if opt.is_some() {
+            info!("Created or updated track_location: {path}");
+        }
+        Ok(())
+    }
+
+    pub fn insert_genres_if_not_exist(&mut self, name: String, track_id: i32) -> QueryResult<()> {
+        let opt = diesel::insert_into(genres::table)
+            .values((genres::name.eq(&name), genres::track_id.eq(track_id)))
+            .on_conflict_do_nothing()
+            .execute(&mut self.database)
+            .optional()?;
+        if opt.is_some() {
+            info!("Created genre: {name}, for track_id {track_id}");
+        }
+        Ok(())
     }
 }

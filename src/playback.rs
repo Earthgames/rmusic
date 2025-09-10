@@ -7,12 +7,11 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, Result};
 use cpal::Sample;
 use log::{error, warn};
-use rand::thread_rng;
 use rubato::{FftFixedInOut, Resampler};
 
 use crate::audio_conversion::{interleaved_to_planar, planar_to_interleaved};
 use crate::decoders::{opus_decoder::OpusReader, symphonia_wrap::SymphoniaWrapper, Decoder};
-use crate::queue::{get_track_from_item, QueueItem};
+use crate::queue::queue_items::QueueItem;
 use playback_context::{ArcPlaybackContext, PlaybackContext};
 
 pub mod playback_context;
@@ -104,6 +103,7 @@ impl PlaybackDaemon {
 
         self.buffer_output.extend(self.resampler.interleaved.iter());
         if self.decoder.finished() {
+            // TODO:
             let mut queue = self.playback_context.lock_queue();
             let track = queue.next_track();
             drop(queue);
