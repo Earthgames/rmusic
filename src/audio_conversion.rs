@@ -1,4 +1,6 @@
-pub fn planar_to_interleaved(input: &[Vec<f32>], output: &mut [f32], channels: usize) {
+use crate::BuF;
+
+pub fn planar_to_interleaved(input: &[Vec<BuF>], output: &mut [BuF], channels: usize) {
     for (i, frame) in output.chunks_exact_mut(channels).enumerate() {
         for (channel, sample) in frame.iter_mut().enumerate() {
             *sample = input[channel][i];
@@ -6,7 +8,7 @@ pub fn planar_to_interleaved(input: &[Vec<f32>], output: &mut [f32], channels: u
     }
 }
 
-pub fn interleaved_to_planar(input: &[f32], output: &mut [Vec<f32>], channels: usize) {
+pub fn interleaved_to_planar(input: &[BuF], output: &mut [Vec<BuF>], channels: usize) {
     for (i, frame) in input.chunks_exact(channels).enumerate() {
         for (channel, sample) in frame.iter().enumerate() {
             output[channel][i] = *sample;

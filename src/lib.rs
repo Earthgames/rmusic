@@ -10,6 +10,9 @@ pub mod schema;
 /// Shorthand for Result
 pub type Result<T, E = Box<dyn std::error::Error>> = std::result::Result<T, E>;
 
+/// The buffer format used in all buffers
+type BuF = f32;
+
 /// Create a macro to implement into for structs in enums
 ///
 /// ```rust

@@ -12,6 +12,7 @@ use byteorder::{ByteOrder, LittleEndian};
 use cpal::Sample;
 
 use crate::decoders::ogg_demuxer::OggReader;
+use crate::BuF;
 
 use super::MAXERROR;
 
@@ -95,14 +96,14 @@ pub struct OpusReader {
     ogg_reader: OggReader,
     decoder: Decoder,
     pub opus_header: OpusHeader,
-    buffer: VecDeque<f32>,
+    buffer: VecDeque<BuF>,
     package_size: usize,
     pos: u32,
     /// Length in samples
     pub length: u64,
     pub finished: bool,
     left: u64,
-    samples: Vec<f32>,
+    samples: Vec<BuF>,
 }
 
 impl OpusReader {
@@ -236,7 +237,7 @@ impl OpusReader {
     ///
     /// Will fill up the internal buffer first, so it has enough samples
     /// to fill the data
-    pub fn fill(&mut self, data: &mut [f32]) -> Result<u64> {
+    pub fn fill(&mut self, data: &mut [BuF]) -> Result<u64> {
         let mut errors = 0;
         while data.len() > self.buffer.len() && !self.finished && errors < MAXERROR {
             if let Err(err) = self.add_buffer() {

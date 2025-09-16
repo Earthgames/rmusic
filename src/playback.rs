@@ -12,6 +12,7 @@ use rubato::{FftFixedInOut, Resampler};
 use crate::audio_conversion::{interleaved_to_planar, planar_to_interleaved};
 use crate::decoders::{opus_decoder::OpusReader, symphonia_wrap::SymphoniaWrapper, Decoder};
 use crate::queue::queue_items::QueueItem;
+use crate::BuF;
 use playback_context::{ArcPlaybackContext, PlaybackContext};
 
 pub mod playback_context;
@@ -21,7 +22,7 @@ pub struct PlaybackDaemon {
     playback_context: ArcPlaybackContext,
     decoder: Decoder,
     resampler: PlaybackResampler,
-    buffer_output: VecDeque<f32>,
+    buffer_output: VecDeque<BuF>,
     sample_rate_output: usize,
 }
 
@@ -29,13 +30,13 @@ pub struct PlaybackDaemon {
 /// Only contains buffers that are dependent on the decoder sample rate
 /// and the resampler itself
 struct PlaybackResampler {
-    fixed_in_out_resampler: FftFixedInOut<f32>,
-    decoder_output: Vec<f32>,
+    fixed_in_out_resampler: FftFixedInOut<BuF>,
+    decoder_output: Vec<BuF>,
     /// Input Resampler
-    input: Vec<Vec<f32>>,
+    input: Vec<Vec<BuF>>,
     /// Output Resampler
-    output: Vec<Vec<f32>>,
-    interleaved: Vec<f32>,
+    output: Vec<Vec<BuF>>,
+    interleaved: Vec<BuF>,
 }
 
 impl PlaybackDaemon {
@@ -53,7 +54,7 @@ impl PlaybackDaemon {
     pub fn try_new(
         file: &str,
         sample_rate_output: usize,
-        volume_level: f32,
+        volume_level: BuF,
     ) -> Option<PlaybackDaemon> {
         let current = PathBuf::from(file);
         let decoder = match_decoder(&current)?;
@@ -79,7 +80,8 @@ impl PlaybackDaemon {
         })
     }
 
-    pub fn fill(&mut self, data: &mut [f32]) -> Result<()> {
+    /// Fill the data with music
+    pub fn fill(&mut self, data: &mut [BuF]) -> Result<()> {
         while data.len() > self.buffer_output.len() {
             self.add_buffer()?;
         }
@@ -94,7 +96,7 @@ impl PlaybackDaemon {
         Ok(())
     }
 
-    // add to internal buffer
+    /// Add to internal buffer
     fn add_buffer(&mut self) -> Result<()> {
         let left = self.decoder.fill(&mut self.resampler.decoder_output)?;
         self.playback_context.update_left(left);
@@ -116,7 +118,7 @@ impl PlaybackDaemon {
         Ok(())
     }
 
-    // set up a track to be decoded
+    /// Set up a track to be decoded
     fn set_track(&mut self, track: PathBuf) -> Result<()> {
         self.decoder = match_decoder(&track).ok_or(anyhow!("Could not match decoder"))?;
         self.playback_context.update_left(self.decoder.length());
@@ -156,11 +158,11 @@ impl PlaybackDaemon {
         self.decoder.length()
     }
 
-    pub fn set_volume(&self, volume_level: f32) {
+    pub fn set_volume(&self, volume_level: BuF) {
         self.playback_context.update_volume_level(volume_level);
     }
 
-    pub fn change_volume(&self, volume_change: f32) {
+    pub fn change_volume(&self, volume_change: BuF) {
         self.playback_context.change_volume_level(volume_change);
     }
 
@@ -193,9 +195,9 @@ impl PlaybackResampler {
         // Buffers
         let input = fixed_in_out_resampler.input_buffer_allocate(true);
         let output = fixed_in_out_resampler.output_buffer_allocate(true);
-        let decoder_output: Vec<f32> =
+        let decoder_output: Vec<BuF> =
             vec![Sample::EQUILIBRIUM; fixed_in_out_resampler.input_frames_max() * channels];
-        let interleaved: Vec<f32> =
+        let interleaved: Vec<BuF> =
             vec![Sample::EQUILIBRIUM; fixed_in_out_resampler.output_frames_max() * channels];
 
         Some(PlaybackResampler {

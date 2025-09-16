@@ -1,4 +1,4 @@
-use crate::decoders::opus_decoder::OpusReader;
+use crate::{decoders::opus_decoder::OpusReader, BuF};
 use anyhow::{Ok, Result};
 
 use self::symphonia_wrap::SymphoniaWrapper;
@@ -28,7 +28,7 @@ impl std::fmt::Debug for Decoder {
 
 impl Decoder {
     /// Returns the number of samples left in the song
-    pub fn fill(&mut self, data: &mut [f32]) -> Result<u64> {
+    pub fn fill(&mut self, data: &mut [BuF]) -> Result<u64> {
         match self {
             Decoder::Opus(opus) => opus.fill(data),
             Decoder::Symphonia(symp) => symp.fill(data),

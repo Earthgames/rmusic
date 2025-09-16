@@ -17,6 +17,8 @@ use symphonia::core::{
     units::TimeBase,
 };
 
+use crate::BuF;
+
 use super::MAXERROR;
 
 pub struct SymphoniaWrapper {
@@ -27,8 +29,8 @@ pub struct SymphoniaWrapper {
     length: u64,
     channels: Channels,
     sample_rate: usize,
-    buffer_interleaved: SampleBuffer<f32>,
-    buffer: VecDeque<f32>,
+    buffer_interleaved: SampleBuffer<BuF>,
+    buffer: VecDeque<BuF>,
     left: u64,
     finished: bool,
 }
@@ -94,7 +96,7 @@ impl SymphoniaWrapper {
             left = length - packet.ts;
             match decoder.decode(&packet) {
                 Ok(decoded) => {
-                    let mut buffer_interleaved: SampleBuffer<f32> = SampleBuffer::new(
+                    let mut buffer_interleaved: SampleBuffer<BuF> = SampleBuffer::new(
                         decoded.capacity() as u64,
                         SignalSpec::new(sample_rate as u32, channels),
                     );
@@ -158,7 +160,7 @@ impl SymphoniaWrapper {
         Ok(())
     }
 
-    pub fn fill(&mut self, data: &mut [f32]) -> Result<u64> {
+    pub fn fill(&mut self, data: &mut [BuF]) -> Result<u64> {
         let mut errors = 0;
         while data.len() > self.buffer.len() && !self.finished && errors < MAXERROR {
             if let Err(err) = self.add_buffer() {

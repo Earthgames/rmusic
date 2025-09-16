@@ -3,7 +3,7 @@ use std::sync::mpsc::Receiver;
 use cpal::Sample;
 use log::{error, info};
 
-use crate::{playback::PlaybackDaemon, queue::queue_items::QueueItem};
+use crate::{playback::PlaybackDaemon, queue::queue_items::QueueItem, BuF};
 
 #[derive(Debug)]
 pub enum PlaybackAction {
@@ -23,13 +23,13 @@ pub enum PlaybackAction {
     /// Play the first item of the QueueItem and set the rest as the queue
     Play(QueueItem),
     /// Set the volume, 1.0 is default
-    SetVolume(f32),
+    SetVolume(BuF),
     /// Change the volume
-    ChangeVolume(f32),
+    ChangeVolume(BuF),
 }
 
 pub fn playback_loop(
-    data: &mut [f32],
+    data: &mut [BuF],
     _callback: &cpal::OutputCallbackInfo,
     playback_daemon: &mut PlaybackDaemon,
     rx: &Receiver<PlaybackAction>,

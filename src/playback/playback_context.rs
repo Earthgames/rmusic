@@ -11,6 +11,8 @@ use log::error;
 
 use crate::queue::Queue;
 
+use super::BuF;
+
 pub type ArcPlaybackContext = Arc<PlaybackContext>;
 
 pub struct PlaybackContext {
@@ -41,7 +43,7 @@ impl PlaybackContext {
         length: u64,
         track: PathBuf,
         sample_rate: usize,
-        volume_level: f32,
+        volume_level: BuF,
     ) -> ArcPlaybackContext {
         let mut queue = Queue::new();
         queue.current_track = Some(track);
@@ -63,12 +65,12 @@ impl PlaybackContext {
         self.left.store(left, Ordering::Relaxed)
     }
 
-    pub fn update_volume_level(&self, volume_level: f32) {
+    pub fn update_volume_level(&self, volume_level: BuF) {
         self.volume_level
             .store(volume_level.max(0.0), Ordering::Relaxed);
     }
 
-    pub fn change_volume_level(&self, volume_change: f32) {
+    pub fn change_volume_level(&self, volume_change: BuF) {
         let new = self
             .volume_level
             .fetch_add(volume_change, Ordering::Relaxed)
@@ -107,7 +109,7 @@ impl PlaybackContext {
     pub fn sample_rate(&self) -> usize {
         self.sample_rate.load(Ordering::Relaxed)
     }
-    pub fn volume_level(&self) -> f32 {
+    pub fn volume_level(&self) -> BuF {
         self.volume_level.load(Ordering::Relaxed)
     }
     pub fn played(&self) -> u64 {
